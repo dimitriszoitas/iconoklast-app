@@ -18,7 +18,7 @@ export async function POST(request: Request): Promise<Response> {
       throw new AIError("Send the request as JSON.", 415, "unsupported_content_type");
     }
     const input = parseGenerationInput(await readBoundedJson(request, MAX_REQUEST_BYTES));
-    if (inFlight >= MAX_IN_FLIGHT) throw new AIError("Iconoclast.ai is working on other icons. Try again in a moment.", 429, "busy");
+    if (inFlight >= MAX_IN_FLIGHT) throw new AIError("iconoklast.app is working on other icons. Try again in a moment.", 429, "busy");
     inFlight++;
     acquired = true;
     const environment = getAIEnvironment();

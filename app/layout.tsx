@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 export const metadata: Metadata = {
-  title: 'Iconoclast.ai — Icons that belong together',
+  title: 'iconoklast.app — Icons that belong together',
   description: 'Create, refine, and harmonize SVG icons. Set your visual standards, compare directions, and build a consistent icon family.',
   icons: { icon: '/favicon.svg', shortcut: '/favicon.svg' },
 };

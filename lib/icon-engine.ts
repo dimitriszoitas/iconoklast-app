@@ -122,7 +122,7 @@ function transformMatrix(value: string | null): Matrix {
 }
 
 function getParser(): DOMParser {
-  if (typeof DOMParser === "undefined") throw new Error("SVG processing is available in the browser. Please open Iconoclast.ai to process your icons.");
+  if (typeof DOMParser === "undefined") throw new Error("SVG processing is available in the browser. Please open iconoklast.app to process your icons.");
   return new DOMParser();
 }
 
@@ -204,7 +204,7 @@ export function sanitizeSvg(raw: string): string {
     const hasBasePath = node.hasAttribute("data-iconify-base-path");
     const hasCornerRadius = node.hasAttribute("data-iconify-corner-radius");
     if ((hasBasePath || hasCornerRadius) && (tag !== "path" || !hasBasePath || !hasCornerRadius)) {
-      throw new Error("Iconoclast.ai live-corner metadata requires both a base path and a corner radius on a path element.");
+      throw new Error("iconoklast.app live-corner metadata requires both a base path and a corner radius on a path element.");
     }
     for (const attribute of Array.from(node.attributes)) {
       const { name, value } = attribute;
@@ -246,12 +246,12 @@ export function sanitizeSvg(raw: string): string {
         const parsed = numbers(value);
         if (parsed.length !== 1 || parsed[0] < 0 || parsed[0] > 1) throw new Error("SVG opacity must be between 0 and 1.");
       }
-      if (["data-iconify-fit", "data-iconify-canvas", "data-iconify-junction-cap", "data-iconify-junctions"].includes(name) && value !== "1") throw new Error("Invalid Iconoclast.ai fitting metadata.");
-      if (name === "data-iconify-base-path" && validatePath(value) === 0) throw new Error("Iconoclast.ai live-corner metadata requires a drawable base path.");
+      if (["data-iconify-fit", "data-iconify-canvas", "data-iconify-junction-cap", "data-iconify-junctions"].includes(name) && value !== "1") throw new Error("Invalid iconoklast.app fitting metadata.");
+      if (name === "data-iconify-base-path" && validatePath(value) === 0) throw new Error("iconoklast.app live-corner metadata requires a drawable base path.");
       if (name === "data-iconify-corner-radius") {
         const radius = Number(value.trim());
         if (!NUMBER_PATTERN.test(value.trim()) || !Number.isFinite(radius) || radius < 0 || radius > 10000) {
-          throw new Error("Iconoclast.ai corner radius must be a number between 0 and 10000 without units.");
+          throw new Error("iconoklast.app corner radius must be a number between 0 and 10000 without units.");
         }
       }
       if (name === "viewBox" || name === "data-iconify-source-viewbox") {
@@ -977,8 +977,8 @@ export function buildExportBundle(items: IconItem[], standards: Standards): Expo
   }
   if (!files.length) throw new Error("Add at least one icon before exporting a set.");
   files.push({ name: "sprite.svg", content: `<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}">${symbols.join("")}</svg>` });
-  files.push({ name: "manifest.json", content: JSON.stringify({ product: "Iconoclast.ai", version: 1, workspaceStandards: standards, standardsNote: "Workspace settings may differ from the settings used for an earlier accepted icon. Each icon records its own standards snapshot when available; snapshots describe intended settings, not a guarantee of visual compliance.", selection: "Accepted candidates, otherwise shortlisted candidates, otherwise the first candidate for each icon.", icons: manifest }, null, 2) });
-  files.push({ name: "README.txt", content: "Iconoclast.ai SVG export\n\nIndividual SVGs are ready to use. sprite.svg contains named <symbol> elements.\nReference a symbol with <svg viewBox=\"0 0 24 24\"><use href=\"sprite.svg#icon-name\" /></svg>, adapting the viewBox to your grid.\n\nmanifest.json records your standards and each exported candidate's source and review status.\nSelection: accepted candidates first; otherwise shortlisted candidates; otherwise the first candidate.\nDemo candidates are curated examples, not AI-generated results.\n" });
+  files.push({ name: "manifest.json", content: JSON.stringify({ product: "iconoklast.app", version: 1, workspaceStandards: standards, standardsNote: "Workspace settings may differ from the settings used for an earlier accepted icon. Each icon records its own standards snapshot when available; snapshots describe intended settings, not a guarantee of visual compliance.", selection: "Accepted candidates, otherwise shortlisted candidates, otherwise the first candidate for each icon.", icons: manifest }, null, 2) });
+  files.push({ name: "README.txt", content: "iconoklast.app SVG export\n\nIndividual SVGs are ready to use. sprite.svg contains named <symbol> elements.\nReference a symbol with <svg viewBox=\"0 0 24 24\"><use href=\"sprite.svg#icon-name\" /></svg>, adapting the viewBox to your grid.\n\nmanifest.json records your standards and each exported candidate's source and review status.\nSelection: accepted candidates first; otherwise shortlisted candidates; otherwise the first candidate.\nDemo candidates are curated examples, not AI-generated results.\n" });
   return files;
 }
 
@@ -1047,5 +1047,5 @@ export function createZip(files: ExportFile[]): Uint8Array<ArrayBuffer> {
 
 export function exportSet(items: IconItem[], standards: Standards): void {
   const zip = createZip(buildExportBundle(items, standards));
-  download(new Blob([zip], { type: "application/zip" }), "iconoclast-icon-set.zip");
+  download(new Blob([zip], { type: "application/zip" }), "iconoklast-icon-set.zip");
 }

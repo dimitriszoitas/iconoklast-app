@@ -1,4 +1,4 @@
-# Iconoclast.ai
+# iconoklast.app
 
 An SVG workspace for creating, redesigning, and editing consistent icon families.
 
@@ -57,7 +57,7 @@ Never commit the generated value or use a `NEXT_PUBLIC_` variable for it. Keep i
 
 Workspaces, uploaded SVGs, designs, and preferences are stored in the current browser's localStorage. They are not uploaded to a workspace database, synced across devices, or transferred between site origins. A new domain starts a separate workspace; export important work before changing browsers or clearing site data.
 
-An unsaved API key stays in the tab's memory and disappears on refresh. With **Remember my key** selected and an encryption secret configured, Iconoclast.ai verifies the key and stores an AES-GCM encrypted value for up to 30 days in a host-only, HttpOnly, Secure, SameSite=Strict cookie. The cookie is bound to the site's origin and acts as this anonymous browser's credential; there is no account sign-in. Key contents are never returned to page JavaScript or included in workspace exports. **Forget key** removes the browser cookie without revoking the provider key.
+An unsaved API key stays in the tab's memory and disappears on refresh. With **Remember my key** selected and an encryption secret configured, iconoklast.app verifies the key and stores an AES-GCM encrypted value for up to 30 days in a host-only, HttpOnly, Secure, SameSite=Strict cookie. The cookie is bound to the site's origin and acts as this anonymous browser's credential; there is no account sign-in. Key contents are never returned to page JavaScript or included in workspace exports. **Forget key** removes the browser cookie without revoking the provider key.
 
 Local development permits a separate non-Secure cookie only on HTTP loopback hosts. Without a configured encryption secret, session-only AI connections still work.
 
