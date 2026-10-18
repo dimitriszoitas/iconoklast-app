@@ -445,3 +445,6 @@
 .app-shell .set-upload-empty h2 { margin: 0; }
 .app-shell .set-upload-empty p { max-width: 52ch; margin: 0; }
 .app-shell .set-upload-empty .button { margin-top: 4px; }
+
+/* Separate creation actions from the workspace navigation below. */
+.app-shell .sidebar > .upload-zone + .nav-label { margin-top: 16px; }
