@@ -1,0 +1,54 @@
+/* Compact standards share one flat panel; controls retain their own focus states. */
+.standards-panel.compact-standards-panel { padding: 20px 18px; }
+.compact-standards-panel .panel-heading { margin-bottom: 4px; }
+.compact-standards-panel .panel-subtitle { margin: 0 0 16px; font-size: 12px; line-height: 1.5; }
+.std-controls { min-width: 0; color: var(--text, #242e36); }
+.std-controls .std-section { padding: 15px 0; border-top: 1px solid var(--border, #d3dce2); }
+.std-controls .std-section:first-child { padding-top: 0; border-top: 0; }
+.std-controls .std-section-title { margin: 0 0 10px; color: #3c4e59; font-size: 14px; line-height: 1.3; font-weight: 650; }
+.std-controls .std-style-list { display: grid; gap: 2px; margin-bottom: 9px; }
+.std-controls .std-style-row { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 4px 8px; border-radius: 5px; color: #465661; cursor: pointer; font-size: 14px; }
+.std-controls .std-style-row:hover { background: var(--surface-inset, #eaeef2); }
+.std-controls .std-style-row.is-selected { background: var(--accent-soft, #e6f2e9); color: var(--accent-text, #1a6e32); }
+.std-controls .std-style-row:has(input:disabled) { cursor: not-allowed; opacity: .5; }
+.std-controls .std-style-sample { width: 24px; height: 24px; flex: 0 0 24px; }
+.std-controls .std-style-row input[type=radio] { width: 15px; height: 15px; margin: 0 0 0 auto; accent-color: var(--accent, #1f883d); cursor: inherit; }
+.std-controls .std-choice-pair { display: flex; align-items: stretch; gap: 2px; width: 100%; padding: 3px; border-radius: 6px; background: var(--surface-inset, #eaeef2); }
+.std-controls .std-choice-pair button { display: flex; align-items: center; justify-content: center; gap: 5px; flex: 1 1 0; min-width: 0; min-height: 30px; padding: 4px 5px; border-radius: 4px; font-size: 12px; line-height: 1.3; color: #536571; }
+.std-controls .std-choice-pair button:hover:not(:disabled) { color: var(--accent-text, #1a6e32); background: #f4f8f5; }
+.std-controls .std-choice-pair button[aria-pressed=true] { color: var(--accent-text, #1a6e32); background: var(--surface, #fff); box-shadow: 0 1px 3px #213b2c12; font-weight: 600; }
+.std-controls .std-field { margin-top: 10px; min-width: 0; }
+.std-controls .std-field:first-of-type { margin-top: 0; }
+.std-controls .std-field-label { display: block; color: #465661; font-size: 14px; line-height: 1.4; margin-bottom: 5px; }
+.std-controls .std-field-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: #465661; font-size: 14px; line-height: 1.4; margin-bottom: 5px; }
+.std-controls .std-field-heading output, .std-controls .std-value { color: #60717c; font-size: 12px; line-height: 1.4; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.std-controls .std-note { margin: 7px 0 0; color: #60717c; font-size: 12px; line-height: 1.5; }
+.std-controls .std-style-list + .std-note { margin: 0 0 9px; }
+.std-controls .std-range-control + .std-range-control { margin-top: 10px; }
+.std-controls .std-range-sample { display: flex; align-items: center; gap: 10px; height: 30px; }
+.std-controls .std-range-sample > svg { width: 60px; height: 30px; flex: 0 0 60px; color: var(--accent, #1f883d); }
+.std-controls .std-sample-grid { fill: none; stroke: #c4d3dc; stroke-width: .06; }
+.std-controls .std-range-sample input[type=range] { min-width: 0; flex: 1; margin: 0; height: 4px; accent-color: var(--accent, #1f883d); }
+.std-controls .std-range-sample.is-disabled { opacity: .45; }
+.std-controls .studio-select-trigger { width: 100%; font-size: 12px; }
+.std-controls .std-guide-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.std-controls .std-guide-options button { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 53px; padding: 5px 2px; font-size: 12px; line-height: 1.3; border-radius: 5px; color: #60717c; background: var(--surface-inset, #eaeef2); }
+.std-controls .std-guide-options button svg { width: 23px; height: 23px; }
+.std-controls .std-guide-options button[aria-pressed=true] { color: var(--accent-text, #1a6e32); background: var(--accent-soft, #e6f2e9); box-shadow: inset 0 0 0 1px #aacbb5; font-weight: 600; }
+.std-controls .std-guide-options button:hover:not(:disabled) { color: var(--accent-text, #1a6e32); background: #e2ede6; }
+.std-controls .std-fit-button { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 34px; width: 100%; margin-top: 11px; border: 1px solid var(--border-strong, #b6c3cc); background: var(--surface, #fff); border-radius: 6px; color: #3c4e59; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px #213b2c08; }
+.std-controls .std-fit-button:hover:not(:disabled) { background: #edf6ef; color: var(--accent-text, #1a6e32); border-color: #8db39a; }
+/* Keep the shared palette in the same compact rhythm without duplicating it. */
+.std-controls .icon-palette .palette-mode { margin-bottom: 9px; }
+.std-controls .icon-palette .palette-mode button { min-height: 30px; padding: 5px; font-size: 12px; }
+.std-controls .icon-palette .color-input { min-height: 34px; padding: 5px 7px; }
+.std-controls .icon-palette .quick-colors { margin-top: 9px; margin-bottom: 0; }
+.std-controls .icon-palette .palette-proportions { margin-bottom: 9px; }
+.std-controls .icon-palette .palette-entries { gap: 6px; }
+.std-controls .icon-palette .palette-entry { grid-template-columns: minmax(85px, 1fr) 58px 44px 20px; gap: 4px; }
+.std-controls .icon-palette .palette-actions { margin-top: 6px; }
+.std-controls .icon-palette .palette-help { margin-top: 6px; line-height: 1.5; }
+.compact-standards-panel .compact-standards-actions { padding-top: 14px; margin-top: 0; border-top: 1px solid var(--border, #d3dce2); display: flex; flex-direction: column; gap: 8px; }
+.compact-standards-panel .compact-standards-actions > p { margin: 0; font-size: 12px; line-height: 1.5; }
+.compact-standards-panel .compact-standards-actions > .text-button { margin: 0; min-height: 30px; font-size: 12px; }
+.compact-standards-panel .compact-standards-actions > .studio-select-trigger { width: 100%; font-size: 12px; min-height: 34px; }

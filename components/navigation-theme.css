@@ -1,0 +1,106 @@
+/* Soft pools of color give navigation depth without tinting the artwork. */
+.app-shell .sidebar {
+  --navigation-text: #edf3ff;
+  --navigation-muted: #cfdbed;
+  --navigation-divider: #d6e6ff2b;
+  background:
+    radial-gradient(ellipse 170% 56% at -22% -4%, #8b72d67d 0%, #7568b630 48%, transparent 78%),
+    radial-gradient(ellipse 150% 58% at 125% 31%, #428fc580 0%, #397dbf21 54%, transparent 80%),
+    radial-gradient(ellipse 170% 70% at -15% 102%, #329b948c 0%, #2e888247 48%, transparent 83%),
+    #192c46;
+  color: var(--navigation-text);
+  border-right-color: #263d5d;
+  box-shadow: inset -1px 0 #e5edff12;
+}
+
+.app-shell .sidebar .workspace-switch strong { color: #f5f7ff; font-weight: 650; }
+.app-shell .sidebar .workspace-switch div span { color: var(--navigation-muted); }
+.app-shell .sidebar .workspace-avatar {
+  color: #edf0ff;
+  background: #d9d9ff1f;
+  border-color: #d9e4ff40;
+}
+.app-shell .sidebar :is(.nav-label, .icons-heading > span) {
+  color: #cfdbed;
+  font-weight: 650;
+}
+.app-shell .sidebar .icons-heading { border-color: var(--navigation-divider); }
+.app-shell .sidebar .icons-heading b { color: #e0e8f5; }
+.app-shell .sidebar :is(.sidebar-toggle, .icon-button) { color: #dce7f8; }
+.app-shell .sidebar :is(.sidebar-toggle, .icon-button):hover:not(:disabled) {
+  background: #eef4ff17;
+  border-color: #d9e4ff3d;
+  color: #ffffff;
+}
+.app-shell .sidebar button:focus-visible {
+  outline: 2px solid #a0dca8;
+  outline-offset: 2px;
+}
+
+.app-shell .sidebar .main-nav button { color: #e3ebf9; }
+.app-shell .sidebar .main-nav button:hover:not(:disabled):not(.active) {
+  color: #ffffff;
+  background: #eef4ff17;
+}
+.app-shell .sidebar .main-nav button.active {
+  color: #174d2a;
+  background: #d6ebda;
+  box-shadow: none;
+  font-weight: 650;
+}
+.app-shell .sidebar .main-nav button.active:hover:not(:disabled) { background: #e3f2e5; }
+.app-shell .sidebar .nav-badge { color: #edf3ff; background: #eef4ff17; }
+.app-shell .sidebar .main-nav .active .nav-badge { color: #174d2a; background: #bcd9c2; }
+
+.app-shell .sidebar .icon-list { scrollbar-color: #c8deed66 #182b4526; }
+.app-shell .sidebar .icon-row:hover { background: #eef4ff14; }
+.app-shell .sidebar .icon-row.selected { background: #eef4ff24; }
+.app-shell .sidebar .icon-row-main { color: #e0eafa; }
+.app-shell .sidebar .icon-row-main:hover:not(:disabled),
+.app-shell .sidebar .icon-row.selected .icon-row-main { color: #ffffff; }
+.app-shell .sidebar .icon-row.selected .icon-row-label { font-weight: 600; }
+/* Thumbnails retain their original SVG colors on a neutral miniature artboard. */
+.app-shell .sidebar .mini-icon {
+  width: 24px;
+  height: 24px;
+  background: #f0f3f7;
+  border-radius: 5px;
+  opacity: 1;
+}
+.app-shell .sidebar .status-dot { background: #abc5dc; }
+.app-shell .sidebar .accepted-check { color: #9ce2a7; }
+.app-shell .sidebar .delete-icon { color: #dbe7f6; border-radius: 4px; }
+.app-shell .sidebar .delete-icon:hover:not(:disabled) { color: #ffffff; background: #eef4ff24; }
+
+.app-shell .sidebar .add-icon {
+  color: #ffffff;
+  background: #237a43;
+  border-color: #67b27c;
+  box-shadow: 0 1px 3px #10243b30;
+  font-weight: 600;
+}
+.app-shell .sidebar .add-icon:hover:not(:disabled) { color: #ffffff; background: #267f45; border-color: #92d3a4; }
+.app-shell .sidebar .upload-zone {
+  background: #132f453b;
+  border-color: #b7d5df59;
+  box-shadow: none;
+}
+.app-shell .sidebar .upload-glyph { color: #b6e9e2; }
+.app-shell .sidebar .upload-zone strong { color: #f0f6ff; }
+.app-shell .sidebar .upload-zone p { color: #d0dfed; }
+.app-shell .sidebar .upload-zone button { color: #bcf1c2; }
+.app-shell .sidebar .upload-zone button:hover:not(:disabled) { color: #e6f9e4; background: #237a4366; }
+.app-shell .sidebar .upload-zone.drag-over { background: #237a4366; border-color: #a1d9a5; }
+
+.app-shell .sidebar .connection-card { border-color: var(--navigation-divider); }
+.app-shell .sidebar .connection-card:hover:not(:disabled) { background: #eef4ff14; }
+.app-shell .sidebar .connection-icon {
+  color: #d7e4ff;
+  background: #e1e9ff14;
+  border-color: #d3e1f43d;
+}
+.app-shell .sidebar .connection-icon.connected { color: #c4f2c4; background: #3a8d7138; }
+.app-shell .sidebar .connection-card strong { color: #f1f6ff; font-weight: 600; }
+.app-shell .sidebar .connection-card small { color: #d0dfed; }
+.app-shell .sidebar .connection-card > svg { color: #d0dfed; }
+.app-shell .sidebar .sidebar-foot { color: #cfdfeb; }

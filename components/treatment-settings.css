@@ -1,0 +1,23 @@
+.standards-panel .style-options.treatment-options{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.standards-panel .treatment-options button{min-height:82px}
+.style-preview.both i:nth-child(n+3){background:currentColor}
+.treatment-help{font-size:12px;line-height:1.55;color:var(--text-muted,#64748b);margin:10px 0 0}
+.treatment-badge{display:inline-flex;align-items:center;align-self:center;width:max-content;padding:3px 8px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:5px;font-style:normal;font-size:12px;line-height:1.4;color:#334155;font-weight:600;white-space:nowrap}
+.candidate-caption .treatment-badge{margin:6px auto}
+.isb-candidate-caption .treatment-badge{margin:0 auto 5px}
+.isb-paired-help{font-size:12px;color:#64748b;padding:0 18px 10px;margin:0}
+
+.stroke-display .stroke-unit-preview{width:120px;height:40px;display:block;flex-shrink:0;color:var(--accent,#1f883d);fill:none}
+.stroke-unit-grid{stroke:var(--border,#dce4ea);stroke-width:.05}
+.canvas-grid-options button{padding-left:3px;padding-right:3px;font-size:13px;font-variant-numeric:tabular-nums}
+.inspect-modal .inspect-unit-caption{font-size:12px;text-align:center;color:var(--text-muted,#64748b);margin:12px 0}
+
+.fit-grid-button{width:100%;margin-top:12px}
+.inspect-grid-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0}
+.inspect-grid-actions .inspect-guide-toggle{margin:0}
+
+.artwork-fit-settings .segmented-control button{font-size:12px;padding:9px 6px}
+.artwork-fit-settings .custom-padding-label{margin:14px 0 8px;text-transform:none;letter-spacing:0;font-size:12px}
+.inspect-modal .inspect-fit-target{font-size:12px;color:var(--text-muted,#64748b);margin:4px 0 12px}
+.inspect-modal .inspect-fit-feedback{font-size:13px;line-height:1.5;padding:10px 12px;background:var(--green-soft,#e8f4ec);color:#176b31;border-radius:6px;white-space:pre-line}
+.inspect-modal .inspect-fit-feedback.error{background:#fff0ec;color:#943e2e}

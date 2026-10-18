@@ -1,0 +1,85 @@
+
+.sidebar .workspace-switch > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar .workspace-avatar {
+  flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #465461;
+}
+
+.sidebar-toggle:hover {
+  background: #f2f5f7;
+  border-color: #dce4ea;
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid #55758b;
+  outline-offset: 2px;
+}
+
+.sidebar-expand-button {
+  border-color: #dce4ea;
+  background: #ffffff;
+}
+
+.sidebar-mobile-close {
+  display: none;
+}
+
+@media (min-width: 601px) {
+  .studio-layout.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 288px;
+  }
+
+  .studio-layout.sidebar-collapsed > .sidebar {
+    display: none;
+  }
+}
+
+@media (min-width: 1600px) {
+  .studio-layout.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 304px;
+  }
+}
+
+@media (min-width: 1051px) and (max-width: 1200px) {
+  .studio-layout.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+}
+
+@media (min-width: 821px) and (max-width: 1050px) {
+  .studio-layout.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 820px) {
+  .studio-layout.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .sidebar-collapse-button,
+  .sidebar-expand-button {
+    display: none;
+  }
+
+  .sidebar-mobile-close {
+    display: inline-flex;
+  }
+}
