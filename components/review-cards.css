@@ -1,0 +1,18 @@
+.app-shell .review-card .candidate-caption{min-height:58px;padding:10px 12px 14px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px}
+.app-shell .review-card .icon-canvas{height:138px}
+.app-shell .review-card .candidate-actions{display:grid;grid-template-columns:1fr 1fr;height:42px}
+.app-shell .review-card .candidate-actions button{width:100%;min-width:0}
+.app-shell .review-card.is-rejected{border-color:#c8b5c5}
+.app-shell .review-card.is-rejected .icon-canvas{opacity:.52}
+.app-shell .rejected-label{display:flex;align-items:center;gap:4px;font-size:11px;color:#955c71}
+.app-shell .review-card .candidate-actions .rejected-action{background:#f3e5ed;color:#87445f}
+.app-shell .review-card .candidate-actions button:last-child:hover{background:#f3e5ed;color:#87445f}
+.inspect-design-notes{padding:14px 0;color:#4a5b66}
+.inspect-design-notes strong{display:block;margin-bottom:6px;color:#34454f}
+.inspect-design-notes p{font-size:13px;line-height:1.6}
+@media(max-width:600px){.app-shell .review-card .icon-canvas{height:115px}.app-shell .review-card .candidate-caption{padding:8px;min-height:56px}}
+
+.inspect-title-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:7px 0 16px}
+.inspect-title-row h2{margin:0;min-width:0}
+.inspect-title-row .button{flex-shrink:0}
+@media(max-width:600px){.inspect-title-row{align-items:flex-start;flex-direction:column}}

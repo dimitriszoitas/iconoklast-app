@@ -1,12 +1,12 @@
 'use client';
 
-import { ArrowRight, Check, CheckCheck, ChevronDown, CircleAlert, FileCode2, Heart, History, LoaderCircle, LockKeyhole, PenTool, ScanSearch, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ArrowRight, Check, CheckCheck, ChevronDown, CircleAlert, FileCode2, History, LoaderCircle, LockKeyhole, PenTool, ScanSearch, Sparkles, X } from 'lucide-react';
 import type { Candidate, IconItem, Standards } from '../lib/icon-types';
 import { directionCount, directionLetter, versionLabel } from '../lib/candidate-versions';
 import './treatment-settings.css';
 import './icon-set-board.css';
 import IconPreview from './icon-preview';
-import IconMetrics from './icon-metrics';
 
 export type SetBoardItem = IconItem & {
   analysis?: { meaning: string; visualNotes: string; designIntent: string };
@@ -27,9 +27,9 @@ export type IconSetBoardProps = {
   onBriefChange: (id: string, brief: string) => void;
   onRedesign: (id: string) => void;
   onStatus: (itemId: string, candidateId: string, status: Candidate['status']) => void;
-  onEdit: (itemId: string, candidate: Candidate) => void;
   onInspect: (itemId: string, candidate: Candidate) => void;
   onHistory: (id: string) => void;
+  renderRules?: (item: SetBoardItem) => ReactNode;
 };
 
 const sourceLabels: Record<Candidate['source'], string> = {
@@ -43,7 +43,7 @@ function Preview({ svg, label, standards, showGuides }: { svg: string; label: st
   return <IconPreview svg={svg} label={label} size={64} standards={standards} showGuides={showGuides}/>;
 }
 
-export default function IconSetBoard({ standards, showGuides, darkCanvas = false, items, selectedIds, activeId, busy, states, onToggle, onFocus, onBriefChange, onRedesign, onStatus, onEdit, onInspect, onHistory }: IconSetBoardProps) {
+export default function IconSetBoard({ standards, showGuides, darkCanvas = false, items, selectedIds, activeId, busy, states, onToggle, onFocus, onBriefChange, onRedesign, onStatus, onInspect, onHistory, renderRules }: IconSetBoardProps) {
   if (!items.length) return <section className="isb-empty-board" aria-label="Uploaded icon set"><FileCode2 size={25} /><h3>Your set starts here</h3><p>Upload SVGs to see each original beside its redesigned alternatives.</p></section>;
 
   return <section className={`isb-board ${darkCanvas?'dark-previews':''}`} aria-label="Your uploaded icons and their alternatives">
@@ -57,10 +57,10 @@ export default function IconSetBoard({ standards, showGuides, darkCanvas = false
       const state = states[item.id];
       const working = state === 'working';
       const accepted = alternatives.some((candidate) => candidate.status === 'accepted');
-      const shortlist = alternatives.filter((candidate) => candidate.status === 'shortlisted').length;
       const hasAdjustments = alternatives.some((candidate) => candidate.source === 'normalized');
       const hasDemo = alternatives.some((candidate) => candidate.source === 'demo');
       const statusText = working ? 'Redesigning' : state === 'failed' ? 'Needs retry' : accepted ? 'Accepted' : state === 'done' ? 'Ready to review' : alternatives.length ? 'Explore directions' : 'Ready for redesign';
+      const rules = renderRules?.(item);
       return <article className={`isb-row ${activeId === item.id ? 'is-focused' : ''} ${working ? 'is-working' : ''}`} key={item.id} aria-labelledby={`isb-name-${item.id}`} aria-busy={working}>
         <header className="isb-row-header">
           <label className="isb-select" title={`Include ${item.name} in the selected set`}><input type="checkbox" checked={selectedIds.includes(item.id)} disabled={busy} onChange={() => onToggle(item.id)} aria-label={`Select ${item.name} for redesign`} /><span aria-hidden="true"><Check size={11} /></span></label>
@@ -72,17 +72,19 @@ export default function IconSetBoard({ standards, showGuides, darkCanvas = false
 
         {(item.analysis?.meaning || item.analysis?.designIntent) && <div className="isb-analysis"><span className="isb-analysis-label"><ScanSearch size={12} /> Understanding</span><p>{item.analysis.meaning}{item.analysis.designIntent && <span><b>Direction:</b> {item.analysis.designIntent}</span>}</p></div>}
 
-        <div className="isb-row-subhead"><span>REFERENCE <LockKeyhole size={9} /></span><div><strong>{alternatives.length ? alternatives.some(c=>c.pairId)?`${directionCount(alternatives)} directions · ${alternatives.length} versions`:`${alternatives.length} ${alternatives.length === 1 ? 'alternative' : 'alternatives'}` : 'Your next directions'}</strong><span>{item.round > 0 && `Round ${item.round}`}{shortlist > 0 && `${item.round > 0 ? ' · ' : ''}${shortlist} shortlisted`}</span>{alternatives.length > 0 && <small>Compare →</small>}</div></div>
+        {rules && <div className="isb-rules">{rules}</div>}
+
+        <div className="isb-row-subhead"><span>REFERENCE <LockKeyhole size={9} /></span><div><strong>{alternatives.length ? alternatives.some(c=>c.pairId)?`${directionCount(alternatives)} directions · ${alternatives.length} versions`:`${alternatives.length} ${alternatives.length === 1 ? 'alternative' : 'alternatives'}` : 'Your next directions'}</strong><span>{item.round > 0 && `Round ${item.round}`}</span>{alternatives.length > 0 && <small>Compare →</small>}</div></div>
 
         {alternatives.some(c=>c.pairId)&&<p className="isb-paired-help">Matching letters are the same design in two treatments. Accept one outlined and one filled version for export.</p>}
         <div className="isb-strip" role="region" aria-label={`Original and ${alternatives.length} alternatives for ${item.name}`} tabIndex={0}>
-          <div className="isb-original"><button className="isb-original-image" disabled={!originalCandidate} onClick={() => { if (originalCandidate) onInspect(item.id, originalCandidate); }} aria-label={`Inspect original ${item.name}`} title={`Inspect original ${item.name}`}>{item.originalSvg ? <Preview svg={item.originalSvg} label={`Original ${item.name}`} /> : <FileCode2 size={34} strokeWidth={1.1} />}</button><strong>Original</strong><span>Your source icon</span><div className="isb-original-lock"><LockKeyhole size={10} /><span>Preserved</span></div></div>
+          <div className="isb-original"><button type="button" className="isb-original-image" disabled={!originalCandidate} onClick={() => { if (originalCandidate) onInspect(item.id, originalCandidate); }} aria-label={`Open original ${item.name}`} aria-haspopup="dialog">{item.originalSvg ? <Preview svg={item.originalSvg} label={`Original ${item.name}`} /> : <FileCode2 size={34} strokeWidth={1.1} />}</button><strong>Original</strong><span>Your source icon</span><div className="isb-original-lock"><LockKeyhole size={10} /><span>Preserved</span></div></div>
 
-          {alternatives.length ? alternatives.map((candidate) => <div className={`isb-candidate ${candidate.status === 'accepted' ? 'is-accepted' : ''} ${candidate.status === 'shortlisted' ? 'is-shortlisted' : ''}`} key={candidate.id}>
-            <div className="isb-card-top"><span className="isb-letter">{directionLetter(candidate,alternatives)}</span><span className={`isb-source source-${candidate.source}`}>{candidate.status === 'accepted' ? <><Check size={10} /> Accepted</> : sourceLabels[candidate.source] || 'Direction'}</span></div>
-            <button className="isb-candidate-preview" onClick={() => onInspect(item.id, candidate)} title={`Inspect ${candidate.name}`} aria-label={`Inspect ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`}><Preview svg={candidate.svg} label={candidate.name} standards={standards} showGuides={showGuides}/><span className="isb-inspect-hint"><ScanSearch size={12} /> Inspect</span></button>
-            <div className="isb-candidate-caption"><strong title={candidate.name}>{candidate.name}</strong>{candidate.treatment&&<span className="treatment-badge">{versionLabel(candidate)}</span>}<IconMetrics svg={candidate.svg} targetSquare={standards.proportion==='square'} compact/><details className="isb-rationale"><summary>Design notes <ChevronDown size={10} /></summary><p>{candidate.rationale || 'Inspect this direction at different sizes and compare its meaning, proportions, and detail with the original.'}</p></details></div>
-            <div className="isb-candidate-actions"><button disabled={busy} className={candidate.status === 'shortlisted' ? 'is-active' : ''} aria-pressed={candidate.status === 'shortlisted'} aria-label={`${candidate.status === 'shortlisted' ? 'Remove' : 'Add'} ${candidate.name} ${candidate.status === 'shortlisted' ? 'from' : 'to'} shortlist for ${item.name}`} onClick={() => onStatus(item.id, candidate.id, candidate.status === 'shortlisted' ? 'pending' : 'shortlisted')}><Heart size={12} fill={candidate.status === 'shortlisted' ? 'currentColor' : 'none'} /><span>Shortlist</span></button><button disabled={busy} onClick={() => onEdit(item.id, candidate)} aria-label={`Edit ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`}><PenTool size={12} /><span>Edit</span></button><button disabled={busy} className={candidate.status === 'accepted' ? 'is-active accepted' : ''} aria-pressed={candidate.status === 'accepted'} aria-label={`${candidate.status === 'accepted' ? 'Unaccept' : 'Accept'} ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`} onClick={() => onStatus(item.id, candidate.id, candidate.status === 'accepted' ? 'pending' : 'accepted')}><Check size={12} /><span>{candidate.status === 'accepted' ? 'Accepted' : 'Accept'}</span></button></div>
+          {alternatives.length ? alternatives.map((candidate) => <div className={`isb-candidate ${candidate.status === 'accepted' ? 'is-accepted' : ''} ${candidate.status === 'rejected' ? 'is-rejected' : ''}`} key={candidate.id}>
+            <div className="isb-card-top"><span className="isb-letter">{directionLetter(candidate,alternatives)}</span><span className={`isb-source source-${candidate.source}`}>{candidate.status === 'accepted' ? <><Check size={12} /> Accepted</> : candidate.status === 'rejected' ? <><X size={12} /> Rejected</> : sourceLabels[candidate.source] || 'Direction'}</span></div>
+            <button type="button" className="isb-candidate-preview" onClick={() => onInspect(item.id, candidate)} aria-label={`Open ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`} aria-haspopup="dialog"><Preview svg={candidate.svg} label={candidate.name} standards={standards} showGuides={showGuides}/></button>
+            <div className="isb-candidate-caption"><strong title={candidate.name}>{candidate.name}</strong>{candidate.treatment&&<span className="treatment-badge">{versionLabel(candidate)}</span>}</div>
+            <div className="isb-candidate-actions"><button type="button" disabled={busy} className={`decision-accept ${candidate.status === 'accepted' ? 'is-active accepted' : ''}`} aria-pressed={candidate.status === 'accepted'} aria-label={`${candidate.status === 'accepted' ? 'Undo acceptance of' : 'Accept'} ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`} onClick={() => onStatus(item.id, candidate.id, candidate.status === 'accepted' ? 'pending' : 'accepted')}><Check size={13} /><span>Accept</span></button><button type="button" disabled={busy} className={`decision-reject ${candidate.status === 'rejected' ? 'is-active rejected' : ''}`} aria-pressed={candidate.status === 'rejected'} aria-label={`${candidate.status === 'rejected' ? 'Undo rejection of' : 'Reject'} ${candidate.name}${candidate.treatment?` · ${versionLabel(candidate)}`:""} for ${item.name}`} onClick={() => onStatus(item.id, candidate.id, candidate.status === 'rejected' ? 'pending' : 'rejected')}><X size={13} /><span>Reject</span></button></div>
           </div>) : <div className={`isb-awaiting ${working ? 'is-generating' : ''}`}><div className="isb-awaiting-icon">{working ? <LoaderCircle size={21} className="isb-spinning" /> : <Sparkles size={21} strokeWidth={1.25} />}</div><div><strong>{working ? 'Exploring new ways to express this icon' : 'A new perspective on the same idea'}</strong><p>{working ? 'Your original stays here. The new directions will appear together in this row.' : 'Redesign this icon to create 4–8 directions, guided by its meaning and your set’s visual language.'}</p>{!working && <button disabled={busy} onClick={() => onRedesign(item.id)}>Explore alternatives <ArrowRight size={12} /></button>}</div></div>}
         </div>
 

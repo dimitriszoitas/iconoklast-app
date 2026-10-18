@@ -1,3 +1,5 @@
+import type { SessionRules } from './session-rules';
+
 export type IconStyle = "line" | "filled" | "combined" | "both" | "duotone";
 
 /** A target share of the icon's painted area. Locked shares are user-defined;
@@ -34,7 +36,7 @@ export type Candidate = {
   /** Matching outlined and filled versions of the same design direction. */
   pairId?: string;
   treatment?: "line" | "filled";
-  status: "pending" | "shortlisted" | "accepted";
+  status: "pending" | "shortlisted" | "accepted" | "rejected";
   source: "demo" | "ai" | "normalized" | "edited";
 };
 
@@ -46,4 +48,5 @@ export type IconItem = {
   candidates: Candidate[];
   round: number;
   standards?: Standards;
+  sessionRules?: SessionRules;
 };
