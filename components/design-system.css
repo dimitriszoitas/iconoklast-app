@@ -167,6 +167,7 @@
   background: var(--accent-soft);
 }
 .app-shell .set-toolbar-link { padding: 4px 7px; min-height: 30px; }
+.app-shell .demo-note > button { padding: 5px 9px; gap: 6px; min-height: 28px; }
 .app-shell .set-toolbar-utilities { gap: 5px; }
 .app-shell .text-button.tertiary { padding: 7px 10px; }
 .app-shell :is(button, input, select, textarea):focus-visible {

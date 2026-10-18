@@ -104,3 +104,47 @@
   .app-shell .ve-status { gap: 6px; }
   .app-shell .ve-status > span { display: none; }
 }
+
+/* Empty studio modes share a small intro; populated views keep their workspace. */
+.app-shell .page-heading.compact-workspace-intro .eyebrow { margin-bottom: 6px; letter-spacing: 1.3px; }
+.app-shell .page-heading.compact-workspace-intro h1 { font-size: 25px; line-height: 1.25; letter-spacing: -.7px; }
+.app-shell .page-heading.compact-workspace-intro > p { margin-top: 5px; font-size: 13px; line-height: 1.5; }
+.app-shell .main-workspace.has-workspace-intro .workspace-mode-switch { margin-top: 12px; }
+.app-shell .main-workspace.has-workspace-intro.set-workspace .workspace-scroll { padding-top: 24px; }
+@media(max-width:600px) {
+  .app-shell .page-heading.compact-workspace-intro h1 { font-size: 24px; }
+  .app-shell .main-workspace.has-workspace-intro.set-workspace .workspace-scroll { padding-top: 20px; }
+}
+
+/* Recently used work is nested under the studio instead of duplicating Library. */
+.app-shell .sidebar .main-nav .sidebar-sessions { min-width: 0; padding: 2px 0 8px 15px; }
+.app-shell .sidebar .sidebar-sessions-label { display: block; padding: 2px 8px 6px; color: #afc3de; font-size: 12px; font-weight: 500; }
+.app-shell .sidebar .sidebar-sessions ul { display: flex; flex-direction: column; gap: 2px; padding: 0; margin: 0; list-style: none; }
+.app-shell .sidebar .main-nav .sidebar-session-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: #d9e5f5;
+  font-size: 12px;
+  font-weight: 450;
+  text-align: left;
+}
+.app-shell .sidebar .main-nav .sidebar-session-button:hover:not(:disabled) { color: #fff; background: #eef4ff17; }
+.app-shell .sidebar .main-nav .sidebar-session-button.is-current { color: #fff; background: #eef4ff26; font-weight: 600; }
+.app-shell .sidebar .sidebar-session-preview { display: flex; align-items: center; justify-content: center; flex: 0 0 21px; width: 21px; height: 21px; background: #edf2f7; border-radius: 4px; color: #3c536d; }
+.app-shell .sidebar .sidebar-session-preview.is-draft { color: #d5e4fa; background: #b9d2f21f; }
+.app-shell .sidebar .sidebar-session-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell .sidebar .main-nav .sidebar-sessions-toggle { display: flex; align-items: center; justify-content: flex-start; gap: 5px; min-height: 28px; padding: 4px 8px; margin-top: 3px; color: #c0d3ec; background: transparent; border: 0; border-radius: 4px; font-size: 12px; }
+.app-shell .sidebar .main-nav .sidebar-sessions-toggle[aria-expanded=true] svg { transform: rotate(180deg); }
+.app-shell .sidebar .connection-card .connection-status-badge { display: inline-flex; align-items: center; gap: 5px; width: max-content; padding: 2px 6px; border-radius: 4px; margin-top: 5px; color: #d7e2f2; background: #c7d9ef17; font-size: 12px; line-height: 1.4; }
+.app-shell .sidebar .connection-card .connection-status-badge:before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #92a7bf; }
+.app-shell .sidebar .connection-card .connection-status-badge.is-enabled { color: #cff0d3; background: #87cd9c1a; }
+.app-shell .sidebar .connection-card .connection-status-badge.is-enabled:before { background: #9ee0ac; }

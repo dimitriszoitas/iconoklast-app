@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, FolderOpen, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, WandSparkles, X } from 'lucide-react';
 import { DEFAULT_STANDARDS, createDemoCandidates, createSampleSet, sanitizeSvg, recolorSvg, updateSvgStrokeWidth, analyzeSvg, exportSvg, exportSet } from '@/lib/icon-engine';
 import type { Candidate, IconItem, Standards } from '@/lib/icon-types';
 import { directionCount, directionLetter, versionLabel, candidateFileName } from '@/lib/candidate-versions';
@@ -16,6 +16,8 @@ import '@/components/connection-settings.css';
 import IconSetBoard from '@/components/icon-set-board';
 import IconLibrary, { type IconLibraryFilter, type LibraryPreviewSize, LIBRARY_PREVIEW_SIZES } from '@/components/icon-library';
 import PreviewBackgroundToggle from '@/components/preview-background-toggle';
+import { downloadLibrary, selectLibraryEntries, type LibrarySelection } from '@/lib/library-export';
+import { removeLibraryEntries } from '@/lib/library-removal';
 import SetToolbar from '@/components/set-toolbar';
 import GenerationProgress from '@/components/generation-progress';
 import { renderReferenceImages } from '@/lib/render-reference';
@@ -37,6 +39,8 @@ type Revision = { round: number; candidates: Candidate[]; standards: Standards; 
 type StudioItem = IconItem & { revisions?: Revision[]; standards?: Standards; suggestions?: string[]; analysis?: {meaning:string;visualNotes:string;designIntent:string} };
 type Tab = 'studio' | 'refactor' | 'collection';
 const STORAGE_KEY = 'iconify.workspace.v1';
+const DRAFT_SESSION_ID = 'new-icon-draft';
+type StudioSession = { id: string; name: string; svg?: string; draft: boolean };
 const uid = () => crypto.randomUUID();
 const standardsWith = (current:Standards,patch:Partial<Standards>):Standards => {
   const next={...current,...patch};
@@ -55,6 +59,9 @@ function Logo() { return <span className="logo-mark"><i /><i /><i /><i /></span>
 export default function Home() {
   const [items, setItems] = useState<StudioItem[]>([]);
   const [activeId, setActiveId] = useState('');
+  const [recentSessionIds, setRecentSessionIds] = useState<string[]>([]);
+  const [showAllSessions, setShowAllSessions] = useState(false);
+  const [sessionFocusRequest, setSessionFocusRequest] = useState<{itemId:string;focus:boolean}|null>(null);
   const [standards, setStandards] = useState<Standards>({ ...DEFAULT_STANDARDS });
   const [setName, setSetName] = useState('Everyday essentials');
   const [tab, setTab] = useState<Tab>('studio');
@@ -116,8 +123,16 @@ export default function Home() {
   const accepted = items.filter(i => i.candidates.some(c => c.status === 'accepted'));
   const acceptedSvgCount = accepted.reduce((total, item) => total + item.candidates.filter(candidate => candidate.status === 'accepted').length, 0);
   const connected = !!apiKey || keySaved || serverConfigured;
+  const aiEnabled = connected && useAI;
   const candidates = active?.candidates ?? [];
+  const recentSessions = recentSessionIds.map((id):StudioSession|null => {
+    if(id===DRAFT_SESSION_ID)return newBrief.trim()?{id,name:'New icon draft',draft:true}:null;
+    const item=items.find(value=>value.id===id);
+    return item?{id,name:item.name,svg:item.candidates.find(candidate=>candidate.status==='accepted')?.svg||item.candidates[0]?.svg||item.originalSvg,draft:false}:null;
+  }).filter((session):session is StudioSession=>session!==null);
+  const visibleSessions = showAllSessions?recentSessions:recentSessions.slice(0,5);
   const uploaded = items.filter(i=>i.originalSvg);
+  const showWorkspaceIntro = tab==='studio' ? isNew || candidates.length===0 : tab==='refactor' && uploaded.length===0;
   const batchTargets = uploaded.filter(i=>batchIds.includes(i.id));
   const hasUpload = !isNew && !!active?.originalSvg;
   const inspectedCanvas = inspect ? getSvgCanvas(inspect.svg) : null;
@@ -142,6 +157,11 @@ export default function Home() {
           const creating = restoredTab==='studio' && (data.isNew===true || !!focused?.originalSvg);
           setItems(checked); setActiveId(creating?'':focused?.id ?? ''); setNewBrief(draft); setIsNew(creating); setBrief(creating?draft:focused?.brief ?? '');
           setTab(restoredTab);
+          const sessionIds = Array.isArray(data.recentSessionIds)
+            ? [...new Set<string>(data.recentSessionIds.filter((id:unknown):id is string=>typeof id==='string'&&(id===DRAFT_SESSION_ID?!!draft.trim():checked.some((item:StudioItem)=>item.id===id))))].slice(0,101)
+            : [...(draft.trim()?[DRAFT_SESSION_ID]:[]),...(focused&&(!focused.id.startsWith('sample-')||focused.round>1||focused.candidates.some((candidate:Candidate)=>candidate.source==='ai'||candidate.source==='edited'))?[focused.id]:[])];
+          setRecentSessionIds(sessionIds);
+          if(restoredTab==='refactor'&&focused?.originalSvg)setSessionFocusRequest({itemId:focused.id,focus:false});
           if(['faithful','exploratory','radical'].includes(data.creativity))setCreativity(data.creativity);
           if(Number.isInteger(data.count)&&data.count>=4&&data.count<=8)setCount(data.count);
           if(typeof data.showConstructionGuides==='boolean')setShowConstructionGuides(data.showConstructionGuides);
@@ -162,9 +182,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed })); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds })); }
     catch { setError('Browser storage is full or unavailable. Export your work before closing this page.'); }
-  }, [items, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed]);
+  }, [items, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -180,6 +200,28 @@ export default function Home() {
     workspaceScrollRef.current?.scrollTo({top:0});
     briefRef.current?.focus({preventScroll:true});
   }, [newBriefFocusRequest, isNew, tab]);
+
+  useEffect(() => {
+    if(!ready||!sessionFocusRequest||tab==='collection')return;
+    const frame=requestAnimationFrame(()=>{
+      const scroller=workspaceScrollRef.current;
+      if(!scroller)return;
+      if(tab==='refactor') {
+        const heading=document.getElementById(`isb-name-${sessionFocusRequest.itemId}`);
+        const row=heading?.closest<HTMLElement>('.isb-row');
+        if(row) {
+          const toolbarHeight=scroller.querySelector('.set-toolbar')?.getBoundingClientRect().height??0;
+          scroller.scrollTo({top:Math.max(0,scroller.scrollTop+row.getBoundingClientRect().top-scroller.getBoundingClientRect().top-toolbarHeight-12)});
+          if(sessionFocusRequest.focus)heading?.closest<HTMLButtonElement>('button')?.focus({preventScroll:true});
+        }
+      } else {
+        scroller.scrollTo({top:0});
+        if(sessionFocusRequest.focus)briefRef.current?.focus({preventScroll:true});
+      }
+      setSessionFocusRequest(null);
+    });
+    return()=>cancelAnimationFrame(frame);
+  }, [ready,sessionFocusRequest,tab]);
 
   const audit = useMemo(() => {
     if(!active || !ready) return null;
@@ -268,11 +310,20 @@ export default function Home() {
       setFitFeedback({candidateId,error:true,message});setError(message);
     } finally {setBusy('');controller.current=null;}
   }
-  const chooseIcon = (i: StudioItem) => { setActiveId(i.id); setBrief(i.brief); setIsNew(false); setFeedback(''); setError(''); setMobilePanel(null); setTab(i.originalSvg?'refactor':'studio'); };
+  const recordSession = (id:string, replaceDraft=false) => setRecentSessionIds(previous=>previous[0]===id&&!replaceDraft?previous:[id,...previous.filter(value=>value!==id&&(!replaceDraft||value!==DRAFT_SESSION_ID))].slice(0,101));
+  const chooseIcon = (i: StudioItem) => { recordSession(i.id); setActiveId(i.id); setBrief(i.brief); setIsNew(false); setFeedback(''); setError(''); setMobilePanel(null); setTab(i.originalSvg?'refactor':'studio'); };
+  const openSession = (itemId:string) => {
+    if(busy)return;
+    const item=items.find(value=>value.id===itemId);
+    if(!item)return;
+    chooseIcon(item);
+    setSessionFocusRequest({itemId,focus:true});
+  };
   const openNewIcon = (resetDraft = false) => {
     if(busy)return;
     setActiveId(''); setIsNew(true); setBrief(resetDraft?'':newBrief);
-    if(resetDraft)setNewBrief('');
+    if(resetDraft){setNewBrief('');setRecentSessionIds(previous=>previous.filter(id=>id!==DRAFT_SESSION_ID));}
+    else if(newBrief.trim())recordSession(DRAFT_SESSION_ID);
     setTab('studio'); setFeedback(''); setError(''); setMobilePanel(null);
     setNewBriefFocusRequest(request=>request+1);
   };
@@ -287,7 +338,18 @@ export default function Home() {
     else { setActiveId(''); setBrief(''); }
     setIsNew(false); setTab('refactor');
   };
-  const changeBrief = (value:string) => { setBrief(value); if(isNew)setNewBrief(value); };
+  const changeBrief = (value:string) => {
+    setBrief(value);
+    if(isNew) {
+      setNewBrief(value);
+      if(value.trim())recordSession(DRAFT_SESSION_ID);
+      else setRecentSessionIds(previous=>previous.filter(id=>id!==DRAFT_SESSION_ID));
+    } else if(active) {
+      const itemId=active.id;
+      setItems(previous=>previous.map(item=>item.id===itemId?{...item,brief:value}:item));
+      recordSession(itemId);
+    }
+  };
   const toggleSidebar = () => {
     const collapsed = !sidebarCollapsed;
     setSidebarCollapsed(collapsed);
@@ -333,7 +395,7 @@ export default function Home() {
       if(controller.current.signal.aborted) throw new DOMException('Cancelled','AbortError');
       const revision:Revision|undefined=target?{round:target.round,candidates:target.candidates,standards:target.standards||standards,feedback,brief:target.brief,analysis:target.analysis,suggestions:target.suggestions}:undefined;
       const item:StudioItem={...target,id:targetId,name:target?.name || designBrief.trim().split(/[.!?\n]/)[0].split(' ').slice(0,5).join(' '),brief:designBrief.trim(),candidates:generated,round:nextRound,standards:{...standards},suggestions,analysis,revisions:[...(target?.revisions??[]),...(revision?[revision]:[])].slice(-10)};
-      setItems(old=>target?old.map(i=>i.id===targetId?item:i):[...old,item]); setActiveId(targetId); setBrief(designBrief.trim()); if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'done'})); setIsNew(false); if(!target)setNewBrief(''); setFeedback(''); setTab(target?.originalSvg?'refactor':'studio'); notice(`${directionCount(generated)} ${standards.style==='both'?'paired ':''}${runAI?'AI':'demo'} directions are ready for ${item.name}.`);
+      setItems(old=>target?old.map(i=>i.id===targetId?item:i):[...old,item]); setActiveId(targetId); setBrief(designBrief.trim()); if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'done'})); setIsNew(false); recordSession(targetId,!target); if(!target)setNewBrief(''); setFeedback(''); setTab(target?.originalSvg?'refactor':'studio'); notice(`${directionCount(generated)} ${standards.style==='both'?'paired ':''}${runAI?'AI':'demo'} directions are ready for ${item.name}.`);
     } catch(e) { if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'failed'})); if(e instanceof Error && e.name==='AbortError') notice('Generation cancelled. Your previous round is safe.'); else setError(e instanceof Error?e.message:'Something went wrong. Please try again.'); }
     finally { setBusy(''); controller.current=null; setBatchStates(old=>Object.fromEntries(Object.entries(old).filter(([,state])=>state!=='working'))); }
   }
@@ -359,7 +421,7 @@ export default function Home() {
         setConnectionVerified(true);setRequestProgress(p=>({...p,phase:'Checking the SVG designs'}));
         const generated:Candidate[]=await Promise.all(data.candidates.map(async c=>({...c,id:uid(),svg:sanitizeSvg(await applyEditableCorners(sanitizeSvg(c.svg),standards)),status:'pending' as const,source:'ai' as const})));
         if(aborter.signal.aborted)break;
-        setItems(old=>old.map(i=>i.id!==item.id?i:{...i,candidates:generated,round:i.round+1,standards:{...standards},suggestions:data.suggestions,analysis:data.analysis,revisions:[...(i.revisions??[]),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Before creative redesign',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}].slice(-10)}));completed++;
+        setItems(old=>old.map(i=>i.id!==item.id?i:{...i,candidates:generated,round:i.round+1,standards:{...standards},suggestions:data.suggestions,analysis:data.analysis,revisions:[...(i.revisions??[]),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Before creative redesign',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}].slice(-10)}));completed++;recordSession(item.id);
         setBatchStates(old=>({...old,[item.id]:'done'}));
       }catch(e){
         if(aborter.signal.aborted)break;
@@ -412,7 +474,7 @@ export default function Home() {
 
   function openEditor(candidate:Candidate, itemId=activeId) {
     if(!itemId||busy)return;
-    setInspect(null);setModal(null);setEditing({itemId,candidate});
+    recordSession(itemId);setInspect(null);setModal(null);setEditing({itemId,candidate});
   }
   function saveVectorEdit(svg:string) {
     if(!editing)return;
@@ -420,7 +482,7 @@ export default function Home() {
       const safe=sanitizeSvg(svg);
       const edited:Candidate={...editing.candidate,id:uid(),svg:safe,name:editing.candidate.name.replace(/ · Edited$/,'')+' · Edited',rationale:'Manually edited with the vector tools. Review the geometry and accept when ready.',status:'pending',source:'edited'};
       setItems(old=>old.map(i=>i.id!==editing.itemId?i:{...i,round:i.round+1,candidates:i.candidates.some(c=>c.id===editing.candidate.id)?i.candidates.map(c=>c.id===editing.candidate.id?edited:c):[...i.candidates,edited],revisions:[...(i.revisions??[]),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Before vector editing',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}].slice(-10)}));
-      setEditing(null);notice('Vector edit saved as a new round. Review and accept when ready.');
+      recordSession(editing.itemId);setEditing(null);notice('Vector edit saved as a new round. Review and accept when ready.');
     }catch(e){setError(e instanceof Error?e.message:'Could not save the edited SVG.');throw e;}
   }
 
@@ -433,7 +495,7 @@ export default function Home() {
     const directionAlreadySelected=!!candidate.pairId&&shortlisted.some(c=>c.pairId===candidate.pairId);
     if(status==='shortlisted' && candidate.status!=='shortlisted' && !directionAlreadySelected && shortlistCount>=3) { notice('Choose up to 3 directions per icon.'); return; }
     setItems(old=>old.map(i=>i.id!==itemId?i:{...i,candidates:i.candidates.map(c=>c.id===id?{...c,status:c.status===status?'pending':status}:status==='accepted'&&c.status==='accepted'&&(!candidate.pairId||c.treatment===candidate.treatment||!c.pairId)?{...c,status:'pending'}:c)}));
-    if(tab!=='collection')chooseIcon(item);
+    if(tab!=='collection')chooseIcon(item);else recordSession(itemId);
     if(status==='accepted' && candidate.status!=='accepted') notice(`${item.name}${candidate.treatment?' · '+versionLabel(candidate):''} added to your accepted icons.`);
   }
 
@@ -451,7 +513,7 @@ export default function Home() {
       } catch(e) { errors.push(`${file.name}: ${e instanceof Error?e.message:'Could not read SVG.'}`); }
     }
     setUploadErrors(errors);
-    if(added.length) { setItems(old=>[...old,...added]); setBatchIds(old=>[...old,...added.map(i=>i.id)]); chooseIcon(added[0]); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
+    if(added.length) { setItems(old=>[...old,...added]); setBatchIds(old=>[...old,...added.map(i=>i.id)]); setRecentSessionIds(previous=>[...added.map(item=>item.id),...previous].slice(0,101)); chooseIcon(added[0]); setSessionFocusRequest({itemId:added[0].id,focus:false}); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
     if(fileRef.current) fileRef.current.value='';
   }
 
@@ -466,16 +528,49 @@ export default function Home() {
         analysis:i.analysis?{...i.analysis,designIntent:`Design geometry retained; palette updated to ${standards.colorMode!=='mono'?'the selected colors and proportions':'monochrome'}.`}:undefined,
         revisions:[...(i.revisions??[]),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Before changing the palette',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}].slice(-10)
       }]));
-      setItems(old=>old.map(i=>updates.get(i.id)||i));notice(`Palette applied to ${targets.length} icons. Shapes and originals are preserved; review the recolored designs.`);
+      setItems(old=>old.map(i=>updates.get(i.id)||i));targets.forEach(item=>recordSession(item.id));notice(`Palette applied to ${targets.length} icons. Shapes and originals are preserved; review the recolored designs.`);
     }catch(e){setError(e instanceof Error?e.message:'Could not apply the palette. Previous designs are unchanged.');}
   }
   function removeIcon(id:string) {
-    const rest=items.filter(i=>i.id!==id); setItems(rest); setBatchIds(old=>old.filter(value=>value!==id)); if(id===activeId){setActiveId(rest[0]?.id??'');setBrief(rest[0]?.brief??'');setIsNew(!rest.length);} notice('Icon removed from this workspace.');
+    removeIcons([id]);
+  }
+  function removeIcons(ids:string[]) {
+    if(busy)return;
+    const removed=new Set(ids.filter(id=>items.some(item=>item.id===id)));
+    if(!removed.size)return;
+    setItems(previous=>previous.filter(item=>!removed.has(item.id)));
+    setBatchIds(previous=>previous.filter(id=>!removed.has(id)));
+    setRecentSessionIds(previous=>previous.filter(id=>!removed.has(id)));
+    setBatchStates(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>!removed.has(id))));
+    if(removed.has(activeId)){setActiveId('');setBrief(newBrief);setIsNew(true);}
+    notice(`${removed.size} ${removed.size===1?'icon family':'icon families'} removed from this workspace.`);
+  }
+  function removeSelectedLibraryEntries(selection:LibrarySelection[]) {
+    if(busy)return;
+    const remaining=removeLibraryEntries(items,selection);
+    const familyIds=new Set(remaining.map(item=>item.id));
+    const uploadedIds=new Set(remaining.filter(item=>item.originalSvg).map(item=>item.id));
+    setItems(remaining);
+    setRecentSessionIds(previous=>previous.filter(id=>id===DRAFT_SESSION_ID||familyIds.has(id)));
+    setBatchIds(previous=>previous.filter(id=>uploadedIds.has(id)));
+    setBatchStates(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>uploadedIds.has(id))));
+    const focused=remaining.find(item=>item.id===activeId);
+    if(!focused){setActiveId('');setBrief(newBrief);setIsNew(true);}
+    else if(tab==='refactor'&&!focused.originalSvg){setTab('studio');setBrief(focused.brief);}
+    notice('Selected SVGs removed. Other versions are preserved.');
+  }
+  function downloadLibraryItems(ids:string[]) {
+    try { downloadLibrary(items.filter(item=>ids.includes(item.id)));notice('Your library SVG archive is ready to download.'); }
+    catch(error){setError(error instanceof Error?error.message:'Library export failed.');}
+  }
+  function downloadSelectedLibraryEntries(selection:LibrarySelection[]) {
+    try { downloadLibrary(selectLibraryEntries(items,selection));notice('Your selected SVG archive is ready to download.'); }
+    catch(error){setError(error instanceof Error?error.message:'Library export failed.');}
   }
   function downloadSet() { if(!accepted.length){notice('Accept at least one direction to export your set.');return;} try{exportSet(accepted,standards);notice('Your accepted SVG set is ready to download.');}catch(e){setError(e instanceof Error?e.message:'Export failed.');} }
   function restoreRevision(rev:Revision) {
     if(!active)return;
-    setItems(old=>old.map(i=>i.id!==active.id?i:{...i,candidates:rev.candidates,round:rev.round,standards:rev.standards,brief:rev.brief??i.brief,analysis:rev.analysis,suggestions:rev.suggestions,revisions:[...(i.revisions??[]).filter(r=>r!==rev),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Saved before restore',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}]}));setBrief(rev.brief??active.brief);setModal(null);notice(`Restored round ${rev.round}.`);
+    setItems(old=>old.map(i=>i.id!==active.id?i:{...i,candidates:rev.candidates,round:rev.round,standards:rev.standards,brief:rev.brief??i.brief,analysis:rev.analysis,suggestions:rev.suggestions,revisions:[...(i.revisions??[]).filter(r=>r!==rev),{round:i.round,candidates:i.candidates,standards:i.standards||standards,feedback:'Saved before restore',brief:i.brief,analysis:i.analysis,suggestions:i.suggestions}]}));setBrief(rev.brief??active.brief);recordSession(active.id);setModal(null);notice(`Restored round ${rev.round}.`);
   }
 
   return <div className={`app-shell has-sidebar-brand ${acceptedSvgCount>0?'has-export-selection':''}`}>
@@ -484,19 +579,26 @@ export default function Home() {
       {sidebarCollapsed&&<button ref={expandSidebarRef} className="sidebar-toggle sidebar-expand-button sidebar-edge-toggle" aria-label="Expand sidebar" title="Expand sidebar" aria-expanded={false} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftOpen size={17}/></button>}
       <aside id="workspace-sidebar" aria-label="Studio, library, and workspace" className={`sidebar ${mobilePanel==='icons'?'mobile-open':''}`}>
         <div className="sidebar-brand-row"><a className="brand" href="/" aria-label="iconoklast.app home"><Logo /><span>iconoklast<span className="brand-dot">.app</span></span></a><button ref={collapseSidebarRef} className="sidebar-toggle sidebar-collapse-button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftClose size={17}/></button><button className="sidebar-toggle sidebar-mobile-close" aria-label="Close icons sidebar" onClick={()=>setMobilePanel(null)}><X size={18}/></button></div>
-        <div className="sidebar-project"><label className="sidebar-project-name"><FolderOpen size={15}/><input value={setName} maxLength={60} onChange={e=>setSetName(e.target.value)} aria-label="Icon set name"/></label><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
+        <div className="sidebar-project"><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
         <button className="add-icon" onClick={newIcon} disabled={!!busy}><Plus size={16}/>Create an icon</button>
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav" aria-label="Workspace views">
           <button className={tab!=='collection'?'active':''} aria-current={tab!=='collection'?'page':undefined} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Icon studio</button>
+          {recentSessions.length>0&&<div className="sidebar-sessions" role="group" aria-label="Recent studio sessions">
+            <span className="sidebar-sessions-label">Recent sessions</span>
+            <ul>{visibleSessions.map(session=><li key={session.id}><button type="button" className={`sidebar-session-button ${tab!=='collection'&&(session.draft?isNew:!isNew&&activeId===session.id)?'is-current':''}`} aria-pressed={tab!=='collection'&&(session.draft?isNew:!isNew&&activeId===session.id)} disabled={!!busy} title={session.draft?newBrief:`Resume ${session.name}`} onClick={()=>session.draft?openNewIcon():openSession(session.id)}>
+              <span className={`sidebar-session-preview ${session.draft?'is-draft':''}`}>{session.draft?<PenTool size={13}/>:<SvgPreview svg={session.svg} size={16}/>}</span><span className="sidebar-session-name">{session.name}</span>
+            </button></li>)}</ul>
+            {recentSessions.length>5&&<button type="button" className="sidebar-sessions-toggle" aria-expanded={showAllSessions} onClick={()=>setShowAllSessions(value=>!value)}>{showAllSessions?'Show less':`Show all (${recentSessions.length})`}<ChevronDown size={12}/></button>}
+          </div>}
           <button className={tab==='collection'?'active':''} aria-current={tab==='collection'?'page':undefined} onClick={()=>{setTab('collection');setMobilePanel(null);workspaceScrollRef.current?.scrollTo({top:0});}}><Grid2X2 size={17}/>Library<span className="nav-badge">{items.length}</span></button>
         </nav>
-        <div className="sidebar-bottom"><button className="connection-card" onClick={()=>setModal('connect')}><span className={`connection-icon ${connected?'connected':''}`}><Sparkles size={17}/></span><span><strong>AI settings</strong><small>{connected?(useAI?'AI enabled · Manage connection':'Demo mode · Manage connection'):'Connect your API token'}</small></span><ChevronRight size={14}/></button><div className="sidebar-foot"><span>DESIGNED TO BELONG.</span><span>v0.1</span></div></div>
+        <div className="sidebar-bottom"><button className="connection-card" aria-label="LLM API settings" onClick={()=>setModal('connect')}><span className={`connection-icon ${connected?'connected':''}`}><Sparkles size={17}/></span><span><strong>LLM API settings</strong><small className={`connection-status-badge ${aiEnabled?'is-enabled':''}`}>{aiEnabled?'AI Enabled':'AI Not Enabled'}</small></span><ChevronRight size={14}/></button><div className="sidebar-foot"><span>DESIGNED TO BELONG.</span><span>v0.1</span></div></div>
       </aside>
 
-      <main className={`main-workspace ${tab==='refactor'?'set-workspace':''}`}>
+      <main className={`main-workspace ${tab==='refactor'?'set-workspace':''} ${showWorkspaceIntro?'has-workspace-intro':''}`}>
         <div className="workspace-scroll" ref={workspaceScrollRef}>
-          {tab==='studio'&&<div className="page-heading"><div className="eyebrow"><span/> THE ICON WORKSPACE</div><h1>{isNew?'Every great icon starts here.':'One idea. Many possibilities.'}</h1><p>Explore a few directions. Find the one that feels right.</p></div>}
+          {showWorkspaceIntro&&<div className="page-heading compact-workspace-intro"><h1>Every great icon starts here.</h1><p>Explore a few directions. Find the one that feels right.</p></div>}
 
           {error&&<div className="message error" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError('')}><X size={14}/></button></div>}
           {uploadErrors.length>0&&<div className="message error" role="alert"><div><strong>Some icons need attention</strong>{uploadErrors.map((e,i)=><p key={i}>{e}</p>)}</div><button aria-label="Dismiss upload errors" onClick={()=>setUploadErrors([])}><X size={14}/></button></div>}
@@ -509,12 +611,13 @@ export default function Home() {
           {tab==='collection'?<IconLibrary items={items} standards={standards} busy={!!busy}
             darkCanvas={darkCanvas} previewSize={libraryPreviewSize} onPreviewSizeChange={setLibraryPreviewSize}
             filter={libraryFilter} onFilterChange={setLibraryFilter} query={libraryQuery} onQueryChange={setLibraryQuery}
-            onOpenItem={id=>{const item=items.find(i=>i.id===id);if(item){chooseIcon(item);requestAnimationFrame(()=>{workspaceScrollRef.current?.scrollTo({top:0});if(item.originalSvg)document.getElementById(`isb-name-${id}`)?.scrollIntoView({block:'start'});});}}}
-            onInspect={(itemId,candidate)=>{const item=items.find(i=>i.id===itemId);if(item){setActiveId(itemId);setBrief(item.brief);setIsNew(false);setInspect(candidate);}}}
+            onOpenItem={openSession}
+            onInspect={(itemId,candidate)=>{const item=items.find(i=>i.id===itemId);if(item){recordSession(itemId);setActiveId(itemId);setBrief(item.brief);setIsNew(false);setInspect(candidate);}}}
             onEdit={(itemId,candidate)=>openEditor(candidate,itemId)}
             onStatus={(itemId,candidateId,status)=>setCandidateStatus(candidateId,status,itemId)}
             onDownload={(itemId,candidate)=>exportSvg(candidate.svg,candidateFileName(items.find(i=>i.id===itemId)?.name||candidate.name,candidate))}
-            onRemoveItem={removeIcon}/>
+            onRemoveItem={removeIcon} onDownloadItems={downloadLibraryItems} onRemoveItems={removeIcons}
+            onDownloadEntries={downloadSelectedLibraryEntries} onRemoveEntries={removeSelectedLibraryEntries}/>
           :tab==='refactor'?<>
             {uploaded.length>0?<>
               <SetToolbar total={uploaded.length} selected={batchTargets.length} count={count} onCountChange={setCount}
@@ -528,7 +631,7 @@ export default function Home() {
               <IconSetBoard darkCanvas={darkCanvas} standards={standards} showGuides={showConstructionGuides} items={uploaded} selectedIds={batchIds} activeId={activeId} busy={!!busy} states={batchStates}
                 onToggle={id=>setBatchIds(old=>old.includes(id)?old.filter(i=>i!==id):[...old,id])}
                 onFocus={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);}}
-                onBriefChange={(id,value)=>{setItems(old=>old.map(i=>i.id===id?{...i,brief:value}:i));if(id===activeId)setBrief(value);}}
+                onBriefChange={(id,value)=>{recordSession(id);setItems(old=>old.map(i=>i.id===id?{...i,brief:value}:i));if(id===activeId)setBrief(value);}}
                 onRedesign={id=>{const i=items.find(i=>i.id===id);if(i)void generate('redesign',i);}}
                 onStatus={(itemId,id,status)=>setCandidateStatus(id,status,itemId)}
                 onEdit={(itemId,c)=>openEditor(c,itemId)}
@@ -572,7 +675,7 @@ export default function Home() {
 
     {editing&&<VectorEditor darkCanvas={darkCanvas} onToggleDarkCanvas={()=>setDarkCanvas(value=>!value)} standards={standards} svg={editing.candidate.svg} name={items.find(i=>i.id===editing.itemId)?.name||editing.candidate.name} onSave={saveVectorEdit} onClose={()=>setEditing(null)}/>}
     {(modal||inspect)&&<div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget){connectionController.current?.abort();setModal(null);setInspect(null);}}}><div ref={dialogRef} className={`modal ${inspect?'inspect-modal':''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close icon-button" aria-label="Close dialog" onClick={()=>{connectionController.current?.abort();setModal(null);setInspect(null);}}><X size={20}/></button>
-      {modal==='connect'&&<><span className="modal-icon"><KeyRound size={25}/></span><div className="eyebrow">AI SETTINGS</div><h2 id="modal-title">Your AI connection</h2><p>Choose a model and connect your OpenAI key. You can remember it on this browser.</p>{connected&&<div className="ai-generation-setting"><label><input type="checkbox" checked={useAI} disabled={!!busy||connectionBusy||forgettingKey} onChange={e=>setUseAI(e.target.checked)}/><span>Use AI for new designs</span></label><p>Switch off for demo previews. Redesigns, refinements, and isometric designs always use AI. Your saved key stays connected.</p></div>}<label className="field-label" htmlFor="api-key">OpenAI API key</label><input id="api-key" className="text-input" type="password" autoComplete="off" value={keyDraft} disabled={connectionBusy} onChange={e=>{setKeyDraft(e.target.value);setConnectionError('');}} placeholder={connected?'An AI connection is already active':'sk-…'}/><label className="field-label" htmlFor="model-name">Model</label><div className="model-presets" role="group" aria-label="Choose an AI model">{[{id:'gpt-6-astra',name:'GPT-6 Astra',detail:'Most capable · Higher cost'},{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',detail:'Balanced · Lower cost'}].map(option=><button key={option.id} type="button" disabled={connectionBusy||!!busy} aria-pressed={model===option.id} className={model===option.id?'chosen':''} onClick={()=>{setModel(option.id);setConnectionVerified(false);setConnectionError('');}}><strong>{option.name}</strong><span>{option.detail}</span></button>)}</div><input id="model-name" className="text-input" value={model} disabled={connectionBusy||!!busy} maxLength={80} onChange={e=>{setModel(e.target.value);setConnectionVerified(false);setConnectionError('');}} placeholder="Default model"/><p className="model-help">Your model choice is remembered. Verify access with your OpenAI key before generating.{model==='gpt-6-astra'&&<> Astra costs more per token than Sol. <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noreferrer">View model details ↗</a></>}</p>{keySaved&&!keyDraft.trim()?<div className="remembered-key-status"><ShieldCheck size={17}/><span><strong>Key remembered on this browser</strong><small>Your connection survives refreshes. Use Forget key to remove it.</small></span></div>:<div className="remember-key-setting"><label><input type="checkbox" checked={rememberKey} disabled={!rememberAvailable||connectionBusy||forgettingKey} onChange={e=>setRememberKey(e.target.checked)}/><span>Remember my key</span></label><p>{rememberAvailable?'Encrypted and saved for 30 days on this browser.':'Remembering keys is unavailable on this instance.'}</p></div>}<div className="privacy-note"><ShieldCheck size={17}/><span>{rememberKey?'iconoklast.app encrypts your key in a private browser cookie that only the server can read. It is kept out of your workspace and page storage.':'Without Remember my key, your token stays in this tab’s memory and clears on refresh.'} Usage is billed to your OpenAI account.</span></div>{serverConfigured&&<div className="connection-notice"><Check size={14}/>A server connection is configured.</div>}{connectionError&&<div className="message error" role="alert">{connectionError}</div>}<button className="button primary full" disabled={connectionBusy||forgettingKey||(!keyDraft.trim()&&!connected)} onClick={connectAI}>{connectionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>} {connectionBusy?'Checking key and model…':rememberKey&&!keySaved?'Verify and save key':'Verify and connect'}</button>{connected&&<button className="text-button disconnect" disabled={connectionBusy||forgettingKey} onClick={forgetAIKey}>{forgettingKey?'Forgetting key…':keySaved?'Forget key & use demo mode':'Clear token & use demo mode'}</button>}<small className="modal-small">{keySaved?'Your saved key is encrypted and expires after 30 days.':'Choose Remember my key before connecting to keep it after refresh.'} Your uploaded icons and designs stay on this device.</small></>}
+      {modal==='connect'&&<><span className="modal-icon"><KeyRound size={25}/></span><div className="eyebrow">LLM API SETTINGS</div><h2 id="modal-title">Your AI connection</h2><p>Choose a model and connect your OpenAI key. You can remember it on this browser.</p>{connected&&<div className="ai-generation-setting"><label><input type="checkbox" checked={useAI} disabled={!!busy||connectionBusy||forgettingKey} onChange={e=>setUseAI(e.target.checked)}/><span>Use AI for new designs</span></label><p>Switch off for demo previews. Redesigns, refinements, and isometric designs always use AI. Your saved key stays connected.</p></div>}<label className="field-label" htmlFor="api-key">OpenAI API key</label><input id="api-key" className="text-input" type="password" autoComplete="off" value={keyDraft} disabled={connectionBusy} onChange={e=>{setKeyDraft(e.target.value);setConnectionError('');}} placeholder={connected?'An AI connection is already active':'sk-…'}/><label className="field-label" htmlFor="model-name">Model</label><div className="model-presets" role="group" aria-label="Choose an AI model">{[{id:'gpt-6-astra',name:'GPT-6 Astra',detail:'Most capable · Higher cost'},{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',detail:'Balanced · Lower cost'}].map(option=><button key={option.id} type="button" disabled={connectionBusy||!!busy} aria-pressed={model===option.id} className={model===option.id?'chosen':''} onClick={()=>{setModel(option.id);setConnectionVerified(false);setConnectionError('');}}><strong>{option.name}</strong><span>{option.detail}</span></button>)}</div><input id="model-name" className="text-input" value={model} disabled={connectionBusy||!!busy} maxLength={80} onChange={e=>{setModel(e.target.value);setConnectionVerified(false);setConnectionError('');}} placeholder="Default model"/><p className="model-help">Your model choice is remembered. Verify access with your OpenAI key before generating.{model==='gpt-6-astra'&&<> Astra costs more per token than Sol. <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noreferrer">View model details ↗</a></>}</p>{keySaved&&!keyDraft.trim()?<div className="remembered-key-status"><ShieldCheck size={17}/><span><strong>Key remembered on this browser</strong><small>Your connection survives refreshes. Use Forget key to remove it.</small></span></div>:<div className="remember-key-setting"><label><input type="checkbox" checked={rememberKey} disabled={!rememberAvailable||connectionBusy||forgettingKey} onChange={e=>setRememberKey(e.target.checked)}/><span>Remember my key</span></label><p>{rememberAvailable?'Encrypted and saved for 30 days on this browser.':'Remembering keys is unavailable on this instance.'}</p></div>}<div className="privacy-note"><ShieldCheck size={17}/><span>{rememberKey?'iconoklast.app encrypts your key in a private browser cookie that only the server can read. It is kept out of your workspace and page storage.':'Without Remember my key, your token stays in this tab’s memory and clears on refresh.'} Usage is billed to your OpenAI account.</span></div>{serverConfigured&&<div className="connection-notice"><Check size={14}/>A server connection is configured.</div>}{connectionError&&<div className="message error" role="alert">{connectionError}</div>}<button className="button primary full" disabled={connectionBusy||forgettingKey||(!keyDraft.trim()&&!connected)} onClick={connectAI}>{connectionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>} {connectionBusy?'Checking key and model…':rememberKey&&!keySaved?'Verify and save key':'Verify and connect'}</button>{connected&&<button className="text-button disconnect" disabled={connectionBusy||forgettingKey} onClick={forgetAIKey}>{forgettingKey?'Forgetting key…':keySaved?'Forget key & use demo mode':'Clear token & use demo mode'}</button>}<small className="modal-small">{keySaved?'Your saved key is encrypted and expires after 30 days.':'Choose Remember my key before connecting to keep it after refresh.'} Your uploaded icons and designs stay on this device.</small></>}
       {modal==='help'&&<><span className="modal-icon"><Sparkles size={26}/></span><div className="eyebrow">Welcome to iconoklast.app</div><h2 id="modal-title">A family of icons.<br/>A process that feels natural.</h2><div className="help-steps"><div><b>01</b><span><strong>Define your visual language</strong>Pick a style, weight, canvas, corners, and palette.</span></div><div><b>02</b><span><strong>Create or bring your own</strong>Write an icon brief, or upload a set of SVG files.</span></div><div><b>03</b><span><strong>Explore. Choose. Refine.</strong>Compare 4–8 alternatives. Accept one, or shortlist 2–3 and add feedback for the next round.</span></div><div><b>04</b><span><strong>Take your icons anywhere</strong>Export accepted icons as SVG. Your workspace saves automatically in this browser.</span></div></div><button className="button primary full" onClick={()=>setModal(null)}>Let’s make something<ArrowRight size={16}/></button></>}
       {modal==='history'&&<><span className="modal-icon"><History size={26}/></span><h2 id="modal-title">Room to explore.</h2><p>Every previous round stays here. Restore a direction whenever you need it.</p><div className="history-list">{active?.revisions?.length?([...active.revisions].reverse()).map((r,idx)=><div className="history-item" key={idx}><div className="history-thumbs">{r.candidates.slice(0,3).map(c=><SvgPreview key={c.id} svg={c.svg} size={28}/>)}</div><span><strong>Round {r.round}</strong><small>{r.candidates.length} directions · {r.standards.style}</small></span><button className="button secondary" onClick={()=>restoreRevision(r)}>Restore</button></div>):<div className="empty-history">Your next generation will save this round here.</div>}</div></>}
       {inspect&&<><div className="eyebrow">A CLOSER LOOK</div><h2 id="modal-title">{inspect.name}</h2>{inspect.treatment&&<span className="treatment-badge">{versionLabel(inspect)}</span>}<div className={`inspect-canvas ${darkCanvas?'dark-canvas':''}`}><SvgPreview svg={inspect.svg} size={200} standards={standards} showGuides={showConstructionGuides}/></div>{inspectedCanvas&&<p className="inspect-unit-caption">{inspectedCanvas.width} × {inspectedCanvas.height} grid · 1 square = 1 unit = 1 export pixel</p>}<div className="inspect-grid-actions"><PreviewBackgroundToggle dark={darkCanvas} onToggle={()=>setDarkCanvas(value=>!value)}/><label className="inspect-guide-toggle"><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label><button className="button secondary" disabled={!!busy||items.some(item=>item.originalSvg===inspect.svg)} onClick={()=>void fitExistingDesigns(standards,inspect.id)}>{busy==='fit'?<LoaderCircle size={14} className="spin"/>:<Maximize2 size={14}/>}Fit to {artworkSpan} × {artworkSpan}</button></div><p className="inspect-fit-target">{artworkFit.mode==='keyline'?'Keyline target':'Custom target'}: <strong>{artworkSpan} × {artworkSpan} u</strong> · Padding {artworkPadding} u · Stroke {standards.strokeWidth} u</p>{fitFeedback&&(!fitFeedback.candidateId||fitFeedback.candidateId===inspect.id)&&<p className={`inspect-fit-feedback${fitFeedback.error?' error':''}`} role={fitFeedback.error?'alert':'status'}>{fitFeedback.message}</p>}<IconMetrics svg={inspect.svg} targetSquare={standards.proportion==='square'}/><p>{inspect.rationale}</p><div className={`inspect-sizes ${darkCanvas?'dark-previews':''}`}>{[16,24,32,48].map(n=><div key={n}><SvgPreview svg={inspect.svg} size={n}/><span>{n}px</span></div>)}</div><div className="modal-buttons"><button className="button secondary" onClick={()=>openEditor(inspect)}><PenTool size={15}/>Edit paths</button><button className="button secondary" onClick={()=>{navigator.clipboard.writeText(inspect.svg).then(()=>notice('SVG copied to your clipboard.')).catch(()=>notice('Clipboard unavailable. Download the SVG instead.'));}}><Copy size={15}/>Copy SVG</button><button className="button primary" onClick={()=>exportSvg(inspect.svg,candidateFileName(active?.name||inspect.name,inspect))}><Download size={15}/>Download SVG</button></div><details className="svg-code"><summary>View SVG source<FileCode2 size={14}/></summary><pre>{inspect.svg}</pre></details></>}
