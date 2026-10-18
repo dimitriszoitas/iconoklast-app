@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, WandSparkles, X } from 'lucide-react';
 import { DEFAULT_STANDARDS, createDemoCandidates, createSampleSet, sanitizeSvg, recolorSvg, updateSvgStrokeWidth, analyzeSvg, exportSvg, exportSet } from '@/lib/icon-engine';
 import type { Candidate, IconItem, Standards } from '@/lib/icon-types';
 import { directionCount, directionLetter, versionLabel, candidateFileName } from '@/lib/candidate-versions';
@@ -19,6 +19,7 @@ import PreviewBackgroundToggle from '@/components/preview-background-toggle';
 import { downloadLibrary, selectLibraryEntries, type LibrarySelection } from '@/lib/library-export';
 import { removeLibraryEntries } from '@/lib/library-removal';
 import SetToolbar from '@/components/set-toolbar';
+import SvgUploadDropzone from '@/components/svg-upload-dropzone';
 import GenerationProgress from '@/components/generation-progress';
 import { renderReferenceImages } from '@/lib/render-reference';
 import IconPreview from '@/components/icon-preview';
@@ -109,6 +110,7 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [presets, setPresets] = useState<{name:string;standards:Standards}[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadInFlight = useRef(false);
   const briefRef = useRef<HTMLTextAreaElement>(null);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -498,9 +500,11 @@ export default function Home() {
   }
 
   async function upload(files:FileList|null) {
-    if(!files || busy) return;
+    if(!files || busy || uploadInFlight.current) return;
     const incoming=Array.from(files); const errors:string[]=[]; const added:StudioItem[]=[];
     if(items.length+incoming.length>100) { setError('A workspace can hold up to 100 icons. Upload a smaller set.'); return; }
+    uploadInFlight.current = true;
+    try {
     for(const file of incoming) {
       try {
         if(!file.name.toLowerCase().endsWith('.svg')) throw new Error('Only SVG files are supported.');
@@ -512,7 +516,10 @@ export default function Home() {
     }
     setUploadErrors(errors);
     if(added.length) { setItems(old=>[...old,...added]); setBatchIds(old=>isNew?added.map(i=>i.id):[...old,...added.map(i=>i.id)]); setRecentSessionIds(previous=>[...added.map(item=>item.id),...previous].slice(0,101)); chooseIcon(added[0]); setSessionFocusRequest({itemId:added[0].id,focus:false}); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
-    if(fileRef.current) fileRef.current.value='';
+    } finally {
+      uploadInFlight.current = false;
+      if(fileRef.current) fileRef.current.value='';
+    }
   }
 
   function applyPalette() {
@@ -589,7 +596,7 @@ export default function Home() {
           </div>}
           <button className={tab==='collection'?'active':''} aria-current={tab==='collection'?'page':undefined} onClick={()=>{setTab('collection');setMobilePanel(null);workspaceScrollRef.current?.scrollTo({top:0});}}><Grid2X2 size={17}/>Library<span className="nav-badge">{items.length}</span></button>
         </nav>
-        <div className="sidebar-bottom"><button className="connection-card" aria-label="LLM API settings" onClick={()=>setModal('connect')}><span className={`connection-icon ${connected?'connected':''}`}><Sparkles size={17}/></span><span><strong>LLM API settings</strong><small className={`connection-status-badge ${aiEnabled?'is-enabled':''}`}>{aiEnabled?'AI Enabled':'AI Not Enabled'}</small></span><ChevronRight size={14}/></button><div className="sidebar-foot"><span>DESIGNED TO BELONG.</span><span>v0.1</span></div></div>
+        <div className="sidebar-bottom"><button className="connection-card" aria-label="LLM API settings" onClick={()=>setModal('connect')}><span className={`connection-icon ${connected?'connected':''}`}><Sparkles size={17}/></span><span><strong>LLM API settings</strong><small className={`connection-status-badge ${aiEnabled?'is-enabled':''}`}>{aiEnabled?'AI Enabled':'AI Not Enabled'}</small></span><ChevronRight size={14}/></button></div>
       </aside>
 
       <main className={`main-workspace ${tab==='refactor'?'set-workspace':''} ${showWorkspaceIntro?'has-workspace-intro':''}`}>
@@ -633,7 +640,7 @@ export default function Home() {
                 onEdit={(itemId,c)=>openEditor(c,itemId)}
                 onInspect={(itemId,c)=>{const i=items.find(i=>i.id===itemId);if(i)chooseIcon(i);setInspect(c);}}
                 onHistory={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);setModal('history');}}/>
-            </>:<div className="set-upload-empty"><Upload size={28}/><h2>Bring your icon set</h2><p>Every SVG gets its own row, with the original beside its redesigns.</p><button className="button primary" onClick={()=>fileRef.current?.click()}>Upload SVGs</button></div>}
+            </>:<SvgUploadDropzone disabled={!!busy} onBrowse={()=>fileRef.current?.click()} onFiles={upload}/>}
           </>:<>
             <section className="brief-card"><div className="brief-heading"><label htmlFor="icon-brief"><Sparkles size={15}/>{hasUpload?`Redesign brief · ${active?.name}`:'What should your icon communicate?'}</label><span id="icon-brief-mode" className="brief-mode-label">{hasUpload?'Redesign':'Design new'}</span></div><textarea id="icon-brief" aria-describedby="icon-brief-mode" ref={briefRef} value={brief} maxLength={2000} disabled={!!busy} onChange={e=>changeBrief(e.target.value)} placeholder="A workspace icon for a productivity app. Simple, welcoming, with a sense of structure…"/><div className="brief-bottom"><div className="direction-count"><label htmlFor="direction-count">Directions</label><StudioSelect id="direction-count" label="Directions" value={String(count)} disabled={!!busy} size="sm" onValueChange={value=>setCount(Number(value))} options={[4,5,6,7,8].map(n=>({value:String(n),label:`${n} ${standards.style==='both'?'pairs':'alternatives'}`}))}/></div>{busy?<button className="button secondary" onClick={()=>controller.current?.abort()}><LoaderCircle size={15} className="spin"/>Cancel</button>:<button className="button primary" onClick={()=>generate(hasUpload?'redesign':'create')}><Sparkles size={15}/>{hasUpload?'Redesign this icon':useAI||standards.perspective==='isometric'?'Generate alternatives':'Preview demo icons'}<span className="enter-symbol">↵</span></button>}</div></section>
             {busy&&busy!=='fit'&&(useAI||busy!=='create')&&<GenerationProgress {...requestProgress} count={count} completed={0} total={1}/>}

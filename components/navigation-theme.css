@@ -92,7 +92,8 @@
 .app-shell .sidebar .upload-zone button:hover:not(:disabled) { color: #e6f9e4; background: #237a4366; }
 .app-shell .sidebar .upload-zone.drag-over { background: #237a4366; border-color: #a1d9a5; }
 
-.app-shell .sidebar .connection-card { border-color: var(--navigation-divider); }
+.app-shell .sidebar .sidebar-bottom { padding: 12px 0; border-top: 1px solid var(--navigation-divider); }
+.app-shell .sidebar .connection-card { padding: 12px; gap: 10px; border: 0; border-radius: 8px; }
 .app-shell .sidebar .connection-card:hover:not(:disabled) { background: #eef4ff14; }
 .app-shell .sidebar .connection-icon {
   color: #d7e4ff;

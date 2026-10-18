@@ -1,0 +1,21 @@
+.app-shell .svg-upload-dropzone {
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.app-shell .svg-upload-dropzone .dropzone-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.app-shell .svg-upload-dropzone.is-dragging {
+  background: radial-gradient(ellipse at 10% 30%, #c9e7ed 0%, transparent 65%), radial-gradient(ellipse at 90% 70%, #e1d7f6 0%, transparent 65%), #eff8f8;
+  border-color: #7b91b2;
+  box-shadow: 0 0 0 3px #8c9fb51c;
+}
+.app-shell .svg-upload-dropzone.is-dragging .dropzone-symbol { color: #6f53a1; }
+.app-shell .svg-upload-dropzone.is-dragging h2 { color: #344267; }
+.app-shell .svg-upload-dropzone[aria-busy=true] { cursor: progress; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .svg-upload-dropzone { transition: none; }
+}
