@@ -69,8 +69,9 @@ export default function SetToolbar({ total, selected, count, onCountChange, brie
       </div>
       <div id={panelId} hidden={compact} className="set-toolbar-details" onFocusCapture={event => setControlsFocused(event.target instanceof HTMLInputElement && event.target.type !== 'checkbox')} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setControlsFocused(false); }}>
         {!compact && <>
+          <label className="set-toolbar-mode-label" htmlFor={`${panelId}-brief`}>Redesign</label>
           <div className="set-toolbar-design-row">
-            <input className="set-toolbar-brief" aria-label="Shared instructions for uploaded set" value={brief} disabled={busy} maxLength={1000} onChange={event => onBriefChange(event.target.value)} placeholder="Optional direction for the set…" />
+            <input id={`${panelId}-brief`} className="set-toolbar-brief" aria-label="Redesign instructions for uploaded set" value={brief} disabled={busy} maxLength={1000} onChange={event => onBriefChange(event.target.value)} placeholder="Optional direction for the set…" />
             {countSelect}{redesignButton}
           </div>
           <div className="set-toolbar-options">

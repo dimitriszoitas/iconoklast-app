@@ -132,7 +132,8 @@ export default function Home() {
   }).filter((session):session is StudioSession=>session!==null);
   const visibleSessions = showAllSessions?recentSessions:recentSessions.slice(0,5);
   const uploaded = items.filter(i=>i.originalSvg);
-  const showWorkspaceIntro = tab==='studio' ? isNew || candidates.length===0 : tab==='refactor' && uploaded.length===0;
+  const hasActiveRedesign = !isNew && !!active?.originalSvg;
+  const showWorkspaceIntro = tab==='studio' ? isNew || candidates.length===0 : tab==='refactor' && !hasActiveRedesign;
   const batchTargets = uploaded.filter(i=>batchIds.includes(i.id));
   const hasUpload = !isNew && !!active?.originalSvg;
   const inspectedCanvas = inspect ? getSvgCanvas(inspect.svg) : null;
@@ -154,14 +155,14 @@ export default function Home() {
           const focused = checked.find((i:StudioItem)=>i.id===data.activeId) || uploads[0] || checked[0];
           const restoredTab:Tab = ['studio','refactor','collection'].includes(data.tab) ? data.tab : uploads.length ? 'refactor' : 'studio';
           const draft = typeof data.newBrief==='string' ? data.newBrief.slice(0,2000) : '';
-          const creating = restoredTab==='studio' && (data.isNew===true || !!focused?.originalSvg);
-          setItems(checked); setActiveId(creating?'':focused?.id ?? ''); setNewBrief(draft); setIsNew(creating); setBrief(creating?draft:focused?.brief ?? '');
+          const creating = restoredTab!=='collection' && (data.isNew===true || (restoredTab==='studio' && !!focused?.originalSvg));
+          setItems(checked); setActiveId(creating?'':focused?.id ?? ''); setNewBrief(draft); setIsNew(creating); setBrief(creating?(restoredTab==='studio'?draft:''):focused?.brief ?? '');
           setTab(restoredTab);
           const sessionIds = Array.isArray(data.recentSessionIds)
             ? [...new Set<string>(data.recentSessionIds.filter((id:unknown):id is string=>typeof id==='string'&&(id===DRAFT_SESSION_ID?!!draft.trim():checked.some((item:StudioItem)=>item.id===id))))].slice(0,101)
             : [...(draft.trim()?[DRAFT_SESSION_ID]:[]),...(focused&&(!focused.id.startsWith('sample-')||focused.round>1||focused.candidates.some((candidate:Candidate)=>candidate.source==='ai'||candidate.source==='edited'))?[focused.id]:[])];
           setRecentSessionIds(sessionIds);
-          if(restoredTab==='refactor'&&focused?.originalSvg)setSessionFocusRequest({itemId:focused.id,focus:false});
+          if(restoredTab==='refactor'&&!creating&&focused?.originalSvg)setSessionFocusRequest({itemId:focused.id,focus:false});
           if(['faithful','exploratory','radical'].includes(data.creativity))setCreativity(data.creativity);
           if(Number.isInteger(data.count)&&data.count>=4&&data.count<=8)setCount(data.count);
           if(typeof data.showConstructionGuides==='boolean')setShowConstructionGuides(data.showConstructionGuides);
@@ -196,9 +197,9 @@ export default function Home() {
   useEffect(() => { setFitFeedback(null); }, [inspect?.id]);
 
   useEffect(() => {
-    if(!newBriefFocusRequest || !isNew || tab!=='studio')return;
+    if(!newBriefFocusRequest || !isNew || tab==='collection')return;
     workspaceScrollRef.current?.scrollTo({top:0});
-    briefRef.current?.focus({preventScroll:true});
+    if(tab==='studio')briefRef.current?.focus({preventScroll:true});
   }, [newBriefFocusRequest, isNew, tab]);
 
   useEffect(() => {
@@ -327,16 +328,13 @@ export default function Home() {
     setTab('studio'); setFeedback(''); setError(''); setMobilePanel(null);
     setNewBriefFocusRequest(request=>request+1);
   };
-  const newIcon = () => openNewIcon(true);
   const switchWorkspace = (next:'studio'|'refactor') => {
     if(busy)return;
     if(next==='studio') { openNewIcon(); return; }
-    if(tab===next)return;
     setError(''); setFeedback(''); setMobilePanel(null);
-    const target=active?.originalSvg?active:uploaded[0];
-    if(target)chooseIcon(target);
-    else { setActiveId(''); setBrief(''); }
-    setIsNew(false); setTab('refactor');
+    setActiveId(''); setBrief(''); setIsNew(true); setTab('refactor');
+    setSessionFocusRequest(null);
+    setNewBriefFocusRequest(request=>request+1);
   };
   const changeBrief = (value:string) => {
     setBrief(value);
@@ -513,7 +511,7 @@ export default function Home() {
       } catch(e) { errors.push(`${file.name}: ${e instanceof Error?e.message:'Could not read SVG.'}`); }
     }
     setUploadErrors(errors);
-    if(added.length) { setItems(old=>[...old,...added]); setBatchIds(old=>[...old,...added.map(i=>i.id)]); setRecentSessionIds(previous=>[...added.map(item=>item.id),...previous].slice(0,101)); chooseIcon(added[0]); setSessionFocusRequest({itemId:added[0].id,focus:false}); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
+    if(added.length) { setItems(old=>[...old,...added]); setBatchIds(old=>isNew?added.map(i=>i.id):[...old,...added.map(i=>i.id)]); setRecentSessionIds(previous=>[...added.map(item=>item.id),...previous].slice(0,101)); chooseIcon(added[0]); setSessionFocusRequest({itemId:added[0].id,focus:false}); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
     if(fileRef.current) fileRef.current.value='';
   }
 
@@ -580,13 +578,11 @@ export default function Home() {
       <aside id="workspace-sidebar" aria-label="Studio, library, and workspace" className={`sidebar ${mobilePanel==='icons'?'mobile-open':''}`}>
         <div className="sidebar-brand-row"><a className="brand" href="/" aria-label="iconoklast.app home"><Logo /><span>iconoklast<span className="brand-dot">.app</span></span></a><button ref={collapseSidebarRef} className="sidebar-toggle sidebar-collapse-button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftClose size={17}/></button><button className="sidebar-toggle sidebar-mobile-close" aria-label="Close icons sidebar" onClick={()=>setMobilePanel(null)}><X size={18}/></button></div>
         <div className="sidebar-project"><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
-        <button className="add-icon" onClick={newIcon} disabled={!!busy}><Plus size={16}/>Create an icon</button>
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav" aria-label="Workspace views">
           <button className={tab!=='collection'?'active':''} aria-current={tab!=='collection'?'page':undefined} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Icon studio</button>
           {recentSessions.length>0&&<div className="sidebar-sessions" role="group" aria-label="Recent studio sessions">
-            <span className="sidebar-sessions-label">Recent sessions</span>
-            <ul>{visibleSessions.map(session=><li key={session.id}><button type="button" className={`sidebar-session-button ${tab!=='collection'&&(session.draft?isNew:!isNew&&activeId===session.id)?'is-current':''}`} aria-pressed={tab!=='collection'&&(session.draft?isNew:!isNew&&activeId===session.id)} disabled={!!busy} title={session.draft?newBrief:`Resume ${session.name}`} onClick={()=>session.draft?openNewIcon():openSession(session.id)}>
+            <ul>{visibleSessions.map(session=><li key={session.id}><button type="button" className={`sidebar-session-button ${tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&activeId===session.id)?'is-current':''}`} aria-pressed={tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&activeId===session.id)} disabled={!!busy} title={session.draft?newBrief:`Resume ${session.name}`} onClick={()=>session.draft?openNewIcon():openSession(session.id)}>
               <span className={`sidebar-session-preview ${session.draft?'is-draft':''}`}>{session.draft?<PenTool size={13}/>:<SvgPreview svg={session.svg} size={16}/>}</span><span className="sidebar-session-name">{session.name}</span>
             </button></li>)}</ul>
             {recentSessions.length>5&&<button type="button" className="sidebar-sessions-toggle" aria-expanded={showAllSessions} onClick={()=>setShowAllSessions(value=>!value)}>{showAllSessions?'Show less':`Show all (${recentSessions.length})`}<ChevronDown size={12}/></button>}
@@ -603,7 +599,7 @@ export default function Home() {
           {error&&<div className="message error" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError('')}><X size={14}/></button></div>}
           {uploadErrors.length>0&&<div className="message error" role="alert"><div><strong>Some icons need attention</strong>{uploadErrors.map((e,i)=><p key={i}>{e}</p>)}</div><button aria-label="Dismiss upload errors" onClick={()=>setUploadErrors([])}><X size={14}/></button></div>}
 
-          {tab!=='collection'&&<div className="workspace-mode-switch" role="group" aria-label="Icon studio mode">
+          {tab!=='collection'&&(!active||isNew)&&<div className="workspace-mode-switch" role="group" aria-label="Icon studio mode">
             <button type="button" aria-pressed={tab==='studio'} disabled={!!busy} onClick={()=>switchWorkspace('studio')}><Sparkles size={15}/>Design new</button>
             <button type="button" aria-pressed={tab==='refactor'} disabled={!!busy} onClick={()=>switchWorkspace('refactor')}><WandSparkles size={15}/>Redesign</button>
           </div>}
@@ -619,7 +615,7 @@ export default function Home() {
             onRemoveItem={removeIcon} onDownloadItems={downloadLibraryItems} onRemoveItems={removeIcons}
             onDownloadEntries={downloadSelectedLibraryEntries} onRemoveEntries={removeSelectedLibraryEntries}/>
           :tab==='refactor'?<>
-            {uploaded.length>0?<>
+            {hasActiveRedesign?<>
               <SetToolbar total={uploaded.length} selected={batchTargets.length} count={count} onCountChange={setCount}
                 brief={batchFeedback} onBriefChange={setBatchFeedback} connected={connected} busy={!!busy}
                 canRecolor={batchTargets.some(i=>i.round>0)} onAddSvgs={()=>fileRef.current?.click()} onRecolor={applyPalette}
@@ -639,7 +635,7 @@ export default function Home() {
                 onHistory={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);setModal('history');}}/>
             </>:<div className="set-upload-empty"><Upload size={28}/><h2>Bring your icon set</h2><p>Every SVG gets its own row, with the original beside its redesigns.</p><button className="button primary" onClick={()=>fileRef.current?.click()}>Upload SVGs</button></div>}
           </>:<>
-            <section className="brief-card"><div className="brief-heading"><label htmlFor="icon-brief"><Sparkles size={15}/>{hasUpload?`Redesign brief · ${active?.name}`:'What should your icon communicate?'}</label><span>THE BRIEF</span></div><textarea id="icon-brief" ref={briefRef} value={brief} maxLength={2000} disabled={!!busy} onChange={e=>changeBrief(e.target.value)} placeholder="A workspace icon for a productivity app. Simple, welcoming, with a sense of structure…"/><div className="brief-bottom"><div className="direction-count"><label htmlFor="direction-count">Directions</label><StudioSelect id="direction-count" label="Directions" value={String(count)} disabled={!!busy} size="sm" onValueChange={value=>setCount(Number(value))} options={[4,5,6,7,8].map(n=>({value:String(n),label:`${n} ${standards.style==='both'?'pairs':'alternatives'}`}))}/></div>{busy?<button className="button secondary" onClick={()=>controller.current?.abort()}><LoaderCircle size={15} className="spin"/>Cancel</button>:<button className="button primary" onClick={()=>generate(hasUpload?'redesign':'create')}><Sparkles size={15}/>{hasUpload?'Redesign this icon':useAI||standards.perspective==='isometric'?'Generate alternatives':'Preview demo icons'}<span className="enter-symbol">↵</span></button>}</div></section>
+            <section className="brief-card"><div className="brief-heading"><label htmlFor="icon-brief"><Sparkles size={15}/>{hasUpload?`Redesign brief · ${active?.name}`:'What should your icon communicate?'}</label><span id="icon-brief-mode" className="brief-mode-label">{hasUpload?'Redesign':'Design new'}</span></div><textarea id="icon-brief" aria-describedby="icon-brief-mode" ref={briefRef} value={brief} maxLength={2000} disabled={!!busy} onChange={e=>changeBrief(e.target.value)} placeholder="A workspace icon for a productivity app. Simple, welcoming, with a sense of structure…"/><div className="brief-bottom"><div className="direction-count"><label htmlFor="direction-count">Directions</label><StudioSelect id="direction-count" label="Directions" value={String(count)} disabled={!!busy} size="sm" onValueChange={value=>setCount(Number(value))} options={[4,5,6,7,8].map(n=>({value:String(n),label:`${n} ${standards.style==='both'?'pairs':'alternatives'}`}))}/></div>{busy?<button className="button secondary" onClick={()=>controller.current?.abort()}><LoaderCircle size={15} className="spin"/>Cancel</button>:<button className="button primary" onClick={()=>generate(hasUpload?'redesign':'create')}><Sparkles size={15}/>{hasUpload?'Redesign this icon':useAI||standards.perspective==='isometric'?'Generate alternatives':'Preview demo icons'}<span className="enter-symbol">↵</span></button>}</div></section>
             {busy&&busy!=='fit'&&(useAI||busy!=='create')&&<GenerationProgress {...requestProgress} count={count} completed={0} total={1}/>}
             <div className="demo-note"><span className={`tiny-dot ${useAI?'purple':''}`}/>{hasUpload?(connected?'AI redraws the icon’s geometry using your creative direction. The original stays available.':'Creative redesign requires AI. Connect your token to explore new geometry for each uploaded icon.'):useAI?'Your brief and references are sent to OpenAI when you generate.':'Demo samples are handcrafted. Connect AI for icons designed from your brief.'}{standards.style==='both'&&<span> Both produces {count} outlined + {count} filled SVGs in one request; more output can use more tokens.</span>}{!connected&&<button onClick={()=>setModal('connect')}>Connect AI<ArrowRight size={11}/></button>}</div>
 

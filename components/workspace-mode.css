@@ -117,8 +117,7 @@
 }
 
 /* Recently used work is nested under the studio instead of duplicating Library. */
-.app-shell .sidebar .main-nav .sidebar-sessions { min-width: 0; padding: 2px 0 8px 15px; }
-.app-shell .sidebar .sidebar-sessions-label { display: block; padding: 2px 8px 6px; color: #afc3de; font-size: 12px; font-weight: 500; }
+.app-shell .sidebar .main-nav .sidebar-sessions { min-width: 0; padding: 1px 0 6px 15px; }
 .app-shell .sidebar .sidebar-sessions ul { display: flex; flex-direction: column; gap: 2px; padding: 0; margin: 0; list-style: none; }
 .app-shell .sidebar .main-nav .sidebar-session-button {
   width: 100%;
@@ -148,3 +147,13 @@
 .app-shell .sidebar .connection-card .connection-status-badge:before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #92a7bf; }
 .app-shell .sidebar .connection-card .connection-status-badge.is-enabled { color: #cff0d3; background: #87cd9c1a; }
 .app-shell .sidebar .connection-card .connection-status-badge.is-enabled:before { background: #9ee0ac; }
+
+/* Active sessions identify their prompt without a creation-mode switch. */
+.app-shell .brief-heading > .brief-mode-label { font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--accent-text); }
+.app-shell .main-workspace:not(.has-workspace-intro) .workspace-scroll > .brief-card { margin-top: 0; }
+.app-shell .set-toolbar .set-toolbar-mode-label { display: block; margin-top: 7px; color: var(--accent-text); font-size: 12px; font-weight: 600; line-height: 1.3; }
+.app-shell .set-toolbar-mode-label + .set-toolbar-design-row { margin-top: 5px; }
+.app-shell .main-workspace.set-workspace:not(.has-workspace-intro) .workspace-scroll > .set-toolbar-sentinel { margin-top: 24px; }
+@media(max-width:600px) {
+  .app-shell .main-workspace.set-workspace:not(.has-workspace-intro) .workspace-scroll > .set-toolbar-sentinel { margin-top: 20px; }
+}
