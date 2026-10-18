@@ -277,8 +277,9 @@
 
 /* An inspector header and concise section labels anchor the standards panel. */
 .app-shell .compact-standards-panel .panel-heading {
-  margin: -20px -18px 0;
-  padding: 19px 18px 4px;
+  margin: -20px -18px 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #becbe080;
   background: #ffffff30;
   color: #354567;
 }

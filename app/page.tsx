@@ -742,7 +742,7 @@ export default function Home() {
       </main>
 
       <aside aria-label="Your standards" className={`standards-panel compact-standards-panel ${mobilePanel==='standards'?'mobile-open':''}`}>
-        <div className="panel-heading"><span><SlidersHorizontal size={17}/><strong>Your standards</strong></span><span className="live-indicator"/></div><p className="panel-subtitle">One system for every icon.</p>
+        <div className="panel-heading"><span><SlidersHorizontal size={17}/><strong>Your standards</strong></span></div>
         <div className="sidebar-session-rules">
           <p className="sidebar-rules-context">{!isNew&&active?(activeSet?.name??active.name):tab==='refactor'?'New redesign session':'New design session'}</p>
           {sessionRulesPanel(!isNew?active:undefined,tab==='refactor'?'refactor':'studio','sidebar')}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, ListChecks, LoaderCircle, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ListChecks, LoaderCircle, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { MAX_DISMISSED_RULES, MAX_RULE_LENGTH, MAX_SESSION_RULES, ruleTextKey, type RuleSuggestion, type SessionRules } from '@/lib/session-rules';
 import './session-rules-panel.css';
 
@@ -42,8 +42,8 @@ function RuleProposal({ suggestion, disabled, atLimit, existingTexts, onApprove,
       {duplicate && <p className="session-rules-hint">This rule is already in your session.</p>}
     </div>
     <div className="session-rule-proposal-actions">
-      <button type="button" className="session-rules-button session-rules-primary" disabled={disabled || invalid} onClick={() => onApprove(text.trim())}><Plus size={14} />Add rule</button>
-      <button type="button" className="session-rules-button session-rules-secondary" disabled={disabled} onClick={onDismiss}>Dismiss</button>
+      <button type="button" className="session-rules-button session-rules-primary" disabled={disabled || invalid} onClick={() => onApprove(text.trim())}><Check size={14} />Accept rule</button>
+      <button type="button" className="session-rules-button session-rules-secondary" disabled={disabled} onClick={onDismiss}><X size={14} />Reject rule</button>
     </div>
   </div>;
 }
