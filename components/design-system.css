@@ -447,4 +447,4 @@
 .app-shell .set-upload-empty .button { margin-top: 4px; }
 
 /* Separate creation actions from the workspace navigation below. */
-.app-shell .sidebar > .upload-zone + .nav-label { margin-top: 16px; }
+.app-shell .sidebar > .add-icon + .nav-label { margin-top: 16px; }

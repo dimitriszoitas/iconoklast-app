@@ -95,7 +95,6 @@ export default function Home() {
   const [showGrid, setShowGrid] = useState(true);
   const [showConstructionGuides, setShowConstructionGuides] = useState(true);
   const [size, setSize] = useState(64);
-  const [dragOver, setDragOver] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [newBriefFocusRequest, setNewBriefFocusRequest] = useState(0);
@@ -487,7 +486,6 @@ export default function Home() {
         <div className="sidebar-brand-row"><a className="brand" href="/" aria-label="iconoklast.app home"><Logo /><span>iconoklast<span className="brand-dot">.app</span></span></a><button ref={collapseSidebarRef} className="sidebar-toggle sidebar-collapse-button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftClose size={17}/></button><button className="sidebar-toggle sidebar-mobile-close" aria-label="Close icons sidebar" onClick={()=>setMobilePanel(null)}><X size={18}/></button></div>
         <div className="sidebar-project"><label className="sidebar-project-name"><FolderOpen size={15}/><input value={setName} maxLength={60} onChange={e=>setSetName(e.target.value)} aria-label="Icon set name"/></label><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
         <button className="add-icon" onClick={newIcon} disabled={!!busy}><Plus size={16}/>Create an icon</button>
-        <div className={`upload-zone ${dragOver?'drag-over':''}`} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);void upload(e.dataTransfer.files);}}><div className="upload-glyph"><Upload size={19}/></div><strong>Already have icons?</strong><p>Drop your SVGs here.<br/>We’ll help them belong together.</p><button className="tertiary" onClick={()=>fileRef.current?.click()} disabled={!!busy}>Browse files <ArrowRight size={13}/></button></div>
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav" aria-label="Workspace views">
           <button className={tab!=='collection'?'active':''} aria-current={tab!=='collection'?'page':undefined} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Icon studio</button>
