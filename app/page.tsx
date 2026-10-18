@@ -12,6 +12,7 @@ import VectorEditor from '@/components/vector-editor';
 import { type Creativity } from '@/components/creative-direction';
 import '@/components/workspace-mode.css';
 import '@/components/sidebar-collapse.css';
+import CollapsedSidebar from '@/components/collapsed-sidebar';
 import '@/components/connection-settings.css';
 import IconSetBoard from '@/components/icon-set-board';
 import IconLibrary, { type IconLibraryFilter, type LibraryPreviewSize, LIBRARY_PREVIEW_SIZES } from '@/components/icon-library';
@@ -23,7 +24,9 @@ import SvgUploadDropzone from '@/components/svg-upload-dropzone';
 import SessionRulesPanel from '@/components/session-rules-panel';
 import useRuleLearning from '@/components/use-rule-learning';
 import { emptySessionRules, normalizeSessionRules, type SessionRules } from '@/lib/session-rules';
-import { applyReviewDecision, ruleLearningFingerprint } from '@/lib/review-decisions';
+import { ruleLearningFingerprint } from '@/lib/review-decisions';
+import { migrateIconSetSessions, getItemSessionRules, buildRuleLearningItems, applySessionReviewDecision, type IconSetSession } from '@/lib/icon-set-sessions';
+import { isApiKeyLike, normalizeModelSelection } from '@/lib/model-selection';
 import '@/components/review-cards.css';
 import GenerationProgress from '@/components/generation-progress';
 import { renderReferenceImages } from '@/lib/render-reference';
@@ -64,6 +67,7 @@ function Logo() { return <span className="logo-mark"><i /><i /><i /><i /></span>
 
 export default function Home() {
   const [items, setItems] = useState<StudioItem[]>([]);
+  const [iconSetSessions, setIconSetSessions] = useState<IconSetSession[]>([]);
   const [activeId, setActiveId] = useState('');
   const [recentSessionIds, setRecentSessionIds] = useState<string[]>([]);
   const [showAllSessions, setShowAllSessions] = useState(false);
@@ -107,6 +111,7 @@ export default function Home() {
   const [libraryFilter, setLibraryFilter] = useState<IconLibraryFilter>('all');
   const [libraryQuery, setLibraryQuery] = useState('');
   const [showGrid, setShowGrid] = useState(true);
+  const [showRejected, setShowRejected] = useState(false);
   const [showConstructionGuides, setShowConstructionGuides] = useState(true);
   const [size, setSize] = useState(64);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
@@ -132,19 +137,30 @@ export default function Home() {
   const connected = !!apiKey || keySaved || serverConfigured;
   const aiEnabled = connected && useAI;
   const candidates = active?.candidates ?? [];
-  const recentSessions = recentSessionIds.map((id):StudioSession|null => {
+  const rejectedCount=candidates.filter(candidate=>candidate.status==='rejected').length;
+  const visibleCandidates=showRejected?candidates:candidates.filter(candidate=>candidate.status!=='rejected');
+  const activeSet = iconSetSessions.find(session=>session.id===active?.sessionId);
+  const recentSessions = [...new Set(recentSessionIds.map(id=>items.find(item=>item.id===id)?.sessionId??id))].map((id):StudioSession|null => {
     if(id===DRAFT_SESSION_ID)return newBrief.trim()?{id,name:'New icon draft',draft:true}:null;
-    const item=items.find(value=>value.id===id);
-    return item?{id,name:item.name,svg:item.candidates.find(candidate=>candidate.status==='accepted')?.svg||item.candidates[0]?.svg||item.originalSvg,draft:false}:null;
+    const set=iconSetSessions.find(session=>session.id===id);
+    const members=set?items.filter(item=>item.sessionId===set.id):[];
+    const item=members[0]??items.find(value=>value.id===id);
+    return item?{id,name:set?`${set.name} · ${members.length} icons`:item.name,svg:item.candidates.find(candidate=>candidate.status==='accepted')?.svg||item.candidates[0]?.svg||item.originalSvg,draft:false}:null;
   }).filter((session):session is StudioSession=>session!==null);
   const visibleSessions = showAllSessions?recentSessions:recentSessions.slice(0,5);
-  const uploaded = items.filter(i=>i.originalSvg);
-  const hasActiveRedesign = !isNew && !!active?.originalSvg;
+  const uploaded = activeSet?items.filter(item=>item.sessionId===activeSet.id):[];
+  const hasActiveRedesign = !isNew && !!activeSet;
   const showWorkspaceIntro = tab==='studio' ? isNew || candidates.length===0 : tab==='refactor' && !hasActiveRedesign;
-  const batchTargets = uploaded.filter(i=>batchIds.includes(i.id));
+  const batchTargets = uploaded.filter(i=>batchIds.includes(i.id)&&(i.originalSvg||i.candidates.length));
   const hasUpload = !isNew && !!active?.originalSvg;
   const inspectedCanvas = inspect ? getSvgCanvas(inspect.svg) : null;
-  const ruleLearning = useRuleLearning({items, standards, apiKey, model, enabled:connected&&useAI, onSuggestions:(itemId,fingerprint,suggestions)=>setItems(previous=>previous.map(item=>item.id===itemId&&ruleLearningFingerprint(item,standards)===fingerprint?{...item,sessionRules:{...normalizeSessionRules(item.sessionRules),suggestions}}:item))});
+  const ruleLearningItems = buildRuleLearningItems(items,iconSetSessions);
+  const ruleLearning = useRuleLearning({items:ruleLearningItems, standards, apiKey, model, enabled:connected&&useAI, onSuggestions:(contextId,fingerprint,suggestions)=>{
+    const context=ruleLearningItems.find(item=>item.id===contextId);
+    if(!context||ruleLearningFingerprint(context,standards)!==fingerprint)return;
+    if(iconSetSessions.some(session=>session.id===contextId))setIconSetSessions(previous=>previous.map(session=>session.id===contextId?{...session,rules:{...session.rules,suggestions}}:session));
+    else setItems(previous=>previous.map(item=>item.id===contextId?{...item,sessionRules:{...normalizeSessionRules(item.sessionRules),suggestions}}:item));
+  }});
   const artworkFit = resolveArtworkFit(standards);
   const artworkSpan = Number(artworkFit.extent.toFixed(2));
   const artworkPadding = Number(artworkFit.padding.toFixed(2));
@@ -158,8 +174,12 @@ export default function Home() {
         const data = JSON.parse(saved);
         if (Array.isArray(data.items) && data.items.length < 101 && data.standards) {
           if(!data.items.every((i:StudioItem)=>typeof i.id==='string'&&typeof i.name==='string'&&typeof i.brief==='string'&&Array.isArray(i.candidates)))throw new Error('Invalid workspace');
-          const checked = data.items.map((i: StudioItem) => ({ ...i, sessionRules:normalizeSessionRules(i.sessionRules), originalSvg: i.originalSvg ? sanitizeSvg(i.originalSvg) : undefined, candidates: i.candidates.map(c => ({ ...c, svg: sanitizeSvg(c.svg) })), revisions: (i.revisions ?? []).map(r=>({...r,candidates:r.candidates.map(c=>({...c,svg:sanitizeSvg(c.svg)}))})) }));
-          const uploads = checked.filter((i:StudioItem)=>i.originalSvg);
+          const restoredItems = data.items.map((i: StudioItem) => ({ ...i, sessionRules:normalizeSessionRules(i.sessionRules), originalSvg: i.originalSvg ? sanitizeSvg(i.originalSvg) : undefined, candidates: i.candidates.map(c => ({ ...c, svg: sanitizeSvg(c.svg) })), revisions: (i.revisions ?? []).map(r=>({...r,candidates:r.candidates.map(c=>({...c,svg:sanitizeSvg(c.svg)}))})) }));
+          const migrated = migrateIconSetSessions<StudioItem>(restoredItems,data.iconSetSessions);
+          const checked = migrated.items;
+          if(typeof data.batchFeedback==='string'&&!Array.isArray(data.iconSetSessions)){const legacy=migrated.sessions.find(session=>checked.some(item=>item.id===data.activeId&&item.sessionId===session.id));if(legacy)legacy.direction=data.batchFeedback.slice(0,1000);}
+          setIconSetSessions(migrated.sessions);
+          const uploads = checked.filter((i:StudioItem)=>i.sessionId&&(i.originalSvg||i.candidates.length));
           const focused = checked.find((i:StudioItem)=>i.id===data.activeId) || uploads[0] || checked[0];
           const restoredTab:Tab = ['studio','refactor','collection'].includes(data.tab) ? data.tab : uploads.length ? 'refactor' : 'studio';
           const draft = typeof data.newBrief==='string' ? data.newBrief.slice(0,2000) : '';
@@ -168,7 +188,7 @@ export default function Home() {
           setTab(restoredTab);
           setDraftRules({studio:normalizeSessionRules(data.draftRules?.studio),refactor:normalizeSessionRules(data.draftRules?.refactor)});
           const sessionIds = Array.isArray(data.recentSessionIds)
-            ? [...new Set<string>(data.recentSessionIds.filter((id:unknown):id is string=>typeof id==='string'&&(id===DRAFT_SESSION_ID?!!draft.trim():checked.some((item:StudioItem)=>item.id===id))))].slice(0,101)
+            ? [...new Set<string>(data.recentSessionIds.filter((id:unknown):id is string=>typeof id==='string'&&(id===DRAFT_SESSION_ID?!!draft.trim():checked.some((item:StudioItem)=>item.id===id||item.sessionId===id))))].slice(0,101)
             : [...(draft.trim()?[DRAFT_SESSION_ID]:[]),...(focused&&(!focused.id.startsWith('sample-')||focused.round>1||focused.candidates.some((candidate:Candidate)=>candidate.source==='ai'||candidate.source==='edited'))?[focused.id]:[])];
           setRecentSessionIds(sessionIds);
           if(restoredTab==='refactor'&&!creating&&focused?.originalSvg)setSessionFocusRequest({itemId:focused.id,focus:false});
@@ -178,23 +198,23 @@ export default function Home() {
           if(typeof data.darkCanvas==='boolean')setDarkCanvas(data.darkCanvas);
           if(LIBRARY_PREVIEW_SIZES.includes(data.libraryPreviewSize))setLibraryPreviewSize(data.libraryPreviewSize);
           if(typeof data.sidebarCollapsed==='boolean')setSidebarCollapsed(data.sidebarCollapsed);
-          if(typeof data.batchFeedback==='string')setBatchFeedback(data.batchFeedback.slice(0,1000));
-          if(typeof data.model==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(data.model))setModel(data.model);
+          setBatchFeedback(migrated.sessions.find(session=>session.id===focused?.sessionId)?.direction??'');
+          setModel(normalizeModelSelection(data.model));
           setBatchIds(Array.isArray(data.batchIds)?data.batchIds.filter((id:string)=>uploads.some((i:StudioItem)=>i.id===id)):uploads.map((i:StudioItem)=>i.id)); setStandards(standardsWith(DEFAULT_STANDARDS,{...data.standards,colorMode:data.standards.colorMode??(data.standards.style==='duotone'?'color':'mono'),style:data.standards.style==='duotone'?'filled':data.standards.style})); setSetName(data.name || 'Everyday essentials'); setPresets(data.presets ?? []); restored = true;
         } else { throw new Error('Unsupported workspace'); }
       }
     } catch { setError('The saved workspace could not be restored. A fresh sample set is ready.'); }
     if (!restored) { const initial = createSampleSet(DEFAULT_STANDARDS); setItems(initial); setActiveId(initial[0]?.id ?? ''); setBrief(initial[0]?.brief ?? ''); }
     setReady(true);
-    fetch('/api/status').then(r => r.json()).then((raw) => { const d=raw as {configured?:boolean;serverConfigured?:boolean;keySaved?:boolean;rememberAvailable?:boolean;defaultModel?:string}; setServerConfigured(d.serverConfigured??!!d.configured); setKeySaved(!!d.keySaved); setRememberKey(!!d.keySaved); setRememberAvailable(!!d.rememberAvailable); setModel(current=>current || d.defaultModel || ''); if(d.configured) setUseAI(true); }).catch(() => {});
+    fetch('/api/status').then(r => r.json()).then((raw) => { const d=raw as {configured?:boolean;serverConfigured?:boolean;keySaved?:boolean;rememberAvailable?:boolean;defaultModel?:string}; setServerConfigured(d.serverConfigured??!!d.configured); setKeySaved(!!d.keySaved); setRememberKey(!!d.keySaved); setRememberAvailable(!!d.rememberAvailable); setModel(current=>normalizeModelSelection(current,normalizeModelSelection(d.defaultModel))); if(d.configured) setUseAI(true); }).catch(() => {});
     return () => { controller.current?.abort(); connectionController.current?.abort(); if(toastTimer.current) clearTimeout(toastTimer.current); };
   }, []);
 
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds, draftRules })); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, iconSetSessions, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds, draftRules })); }
     catch { setError('Browser storage is full or unavailable. Export your work before closing this page.'); }
-  }, [items, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds, draftRules]);
+  }, [items, iconSetSessions, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed, recentSessionIds, draftRules]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -204,6 +224,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => { setFitFeedback(null); }, [inspect?.id]);
+  useEffect(() => { setShowRejected(false); }, [activeId,isNew]);
 
   useEffect(() => {
     if(!newBriefFocusRequest || !isNew || tab==='collection')return;
@@ -320,14 +341,17 @@ export default function Home() {
       setFitFeedback({candidateId,error:true,message});setError(message);
     } finally {setBusy('');controller.current=null;}
   }
-  const recordSession = (id:string, replaceDraft=false) => setRecentSessionIds(previous=>previous[0]===id&&!replaceDraft?previous:[id,...previous.filter(value=>value!==id&&(!replaceDraft||value!==DRAFT_SESSION_ID))].slice(0,101));
-  const chooseIcon = (i: StudioItem) => { recordSession(i.id); setActiveId(i.id); setBrief(i.brief); setIsNew(false); setFeedback(''); setError(''); setMobilePanel(null); setTab(i.originalSvg?'refactor':'studio'); };
+  const recordSession = (id:string, replaceDraft=false) => {
+    const sessionId=items.find(item=>item.id===id)?.sessionId??id;
+    setRecentSessionIds(previous=>[sessionId,...previous.filter(value=>(items.find(item=>item.id===value)?.sessionId??value)!==sessionId&&(!replaceDraft||value!==DRAFT_SESSION_ID))].slice(0,101));
+  };
+  const chooseIcon = (i: StudioItem) => { setBatchFeedback(iconSetSessions.find(session=>session.id===i.sessionId)?.direction??'');recordSession(i.id); setActiveId(i.id); setBrief(i.brief); setIsNew(false); setFeedback(''); setError(''); setMobilePanel(null); setTab(i.sessionId||i.originalSvg?'refactor':'studio'); };
   const openSession = (itemId:string) => {
     if(busy)return;
-    const item=items.find(value=>value.id===itemId);
+    const item=items.find(value=>value.id===itemId)??items.find(value=>value.sessionId===itemId);
     if(!item)return;
     chooseIcon(item);
-    setSessionFocusRequest({itemId,focus:true});
+    setSessionFocusRequest({itemId:item.id,focus:true});
   };
   const openNewIcon = (resetDraft = false) => {
     if(busy)return;
@@ -371,25 +395,25 @@ export default function Home() {
     if((!itemOverride&&(isNew||!active))&&items.length>=100){setError('A workspace can hold up to 100 icons. Remove an icon before creating another.');return;}
     if(!designBrief.trim()) { setError('Describe what this icon should communicate first.'); briefRef.current?.focus(); return; }
     if(mode==='refine' && (directionCount(shortlisted)<2 || directionCount(shortlisted)>3)) { setError('Shortlist 2 or 3 directions to refine together.'); return; }
-    if(mode==='redesign' && !focused?.originalSvg) return;
+    if(mode==='redesign' && !focused?.originalSvg && !focused?.candidates.length) return;
     const runAI = useAI || mode==='redesign' || mode==='refine' || standards.perspective==='isometric';
     if(runAI && !connected) { setError('Creative redesign needs a connected AI token. Your originals and previous directions are unchanged.'); setModal('connect'); return; }
     setError(''); setUploadErrors([]); setBusy(mode); controller.current = new AbortController();
     const target = itemOverride || (isNew ? undefined : active);
     const targetId = target?.id || uid();
     const nextRound = target ? target.round+1 : 1;
-    const sessionRules=normalizeSessionRules(target?target.sessionRules:draftRules.studio);
+    const sessionRules=target?getItemSessionRules(target,iconSetSessions):normalizeSessionRules(draftRules.studio);
     if(runAI)setUseAI(true);
-    if(target)ruleLearning.cancel(target.id);
-    if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'working'}));
+    if(target)ruleLearning.cancel(target.sessionId??target.id);
+    if(target?.sessionId||target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'working'}));
     try {
       let generated: Candidate[]; let suggestions: string[] = []; let analysis: StudioItem['analysis'];
       if(runAI) {
         setRequestProgress({name:target?.name||'New icon',phase:'Preparing reference previews',startedAt:Date.now()});
-        const references = mode==='refine'?shortlisted.map(c=>c.svg):mode==='redesign'?selectFamilyReferences(focused!,items):[];
+        const references = mode==='refine'?shortlisted.map(c=>c.svg):mode==='redesign'?selectFamilyReferences(focused!,focused?.sessionId?items.filter(item=>item.sessionId===focused.sessionId):items):[];
         const referenceImages = await renderReferenceImages(references);
         setRequestProgress(p=>({...p,phase:'Waiting for OpenAI'}));
-        const response = await fetch('/api/generate', {method:'POST',headers:{'Content-Type':'application/json'},signal:controller.current.signal,body:JSON.stringify({brief:designBrief,standards,count,mode,creativity,rules:sessionRules.rules.map(rule=>rule.text),feedback:mode==='redesign'?batchFeedback:feedback,references,referenceImages,apiKey:apiKey||undefined,model:model||undefined})});
+        const response = await fetch('/api/generate', {method:'POST',headers:{'Content-Type':'application/json'},signal:controller.current.signal,body:JSON.stringify({brief:designBrief,standards,count,mode,creativity,rules:sessionRules.rules.map(rule=>rule.text),feedback:mode==='redesign'?(iconSetSessions.find(session=>session.id===target?.sessionId)?.direction??batchFeedback):feedback,references,referenceImages,apiKey:apiKey||undefined,model:model||undefined})});
         const data = await response.json() as GenerationResult & {error?:string|{message?:string}}; if(!response.ok) throw new Error(typeof data.error==='string'?data.error:data.error?.message||'Generation failed. Please try again.');
         if(!Array.isArray(data.candidates)||data.candidates.length!==(standards.style==='both'?count*2:count)) throw new Error('AI returned an incomplete set. Your previous round is safe; please try again.');
         setConnectionVerified(true); setRequestProgress(p=>({...p,phase:'Checking the SVG designs'}));
@@ -404,9 +428,9 @@ export default function Home() {
       generated = await Promise.all(generated.map(async candidate => ({ ...candidate, svg: sanitizeSvg(await applyEditableCorners(candidate.svg, standards)) })));
       if(controller.current.signal.aborted) throw new DOMException('Cancelled','AbortError');
       const revision:Revision|undefined=target?{round:target.round,candidates:target.candidates,standards:target.standards||standards,feedback,brief:target.brief,analysis:target.analysis,suggestions:target.suggestions}:undefined;
-      const item:StudioItem={...target,sessionRules,id:targetId,name:target?.name || designBrief.trim().split(/[.!?\n]/)[0].split(' ').slice(0,5).join(' '),brief:designBrief.trim(),candidates:generated,round:nextRound,standards:{...standards},suggestions,analysis,revisions:[...(target?.revisions??[]),...(revision?[revision]:[])].slice(-10)};
-      setItems(old=>target?old.map(i=>i.id===targetId?item:i):[...old,item]); setActiveId(targetId); setBrief(designBrief.trim()); if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'done'})); setIsNew(false); recordSession(targetId,!target); if(!target){setNewBrief('');setDraftRules(previous=>({...previous,studio:emptySessionRules()}));} setFeedback(''); setTab(target?.originalSvg?'refactor':'studio'); notice(`${directionCount(generated)} ${standards.style==='both'?'paired ':''}${runAI?'AI':'demo'} directions are ready for ${item.name}.`);
-    } catch(e) { if(target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'failed'})); if(e instanceof Error && e.name==='AbortError') notice('Generation cancelled. Your previous round is safe.'); else setError(e instanceof Error?e.message:'Something went wrong. Please try again.'); }
+      const item:StudioItem={...target,sessionRules:target?.sessionId?undefined:sessionRules,id:targetId,name:target?.name || designBrief.trim().split(/[.!?\n]/)[0].split(' ').slice(0,5).join(' '),brief:designBrief.trim(),candidates:generated,round:nextRound,standards:{...standards},suggestions,analysis,revisions:[...(target?.revisions??[]),...(revision?[revision]:[])].slice(-10)};
+      setItems(old=>target?old.map(i=>i.id===targetId?item:i):[...old,item]); setActiveId(targetId); setBrief(designBrief.trim()); if(target?.sessionId||target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'done'})); setIsNew(false); recordSession(targetId,!target); if(!target){setNewBrief('');setDraftRules(previous=>({...previous,studio:emptySessionRules()}));} setFeedback(''); setTab(target?.sessionId||target?.originalSvg?'refactor':'studio'); notice(`${directionCount(generated)} ${standards.style==='both'?'paired ':''}${runAI?'AI':'demo'} directions are ready for ${item.name}.`);
+    } catch(e) { if(target?.sessionId||target?.originalSvg)setBatchStates(old=>({...old,[targetId]:'failed'})); if(e instanceof Error && e.name==='AbortError') notice('Generation cancelled. Your previous round is safe.'); else setError(e instanceof Error?e.message:'Something went wrong. Please try again.'); }
     finally { setBusy(''); controller.current=null; setBatchStates(old=>Object.fromEntries(Object.entries(old).filter(([,state])=>state!=='working'))); }
   }
 
@@ -418,14 +442,14 @@ export default function Home() {
     const failures:string[]=[];let completed=0;
     for(const item of batchTargets){
       if(aborter.signal.aborted)break;
-      ruleLearning.cancel(item.id);
+      ruleLearning.cancel(item.sessionId??item.id);
       setBatchStates(old=>({...old,[item.id]:'working'}));
       setRequestProgress({name:item.name,phase:'Preparing reference previews',startedAt:Date.now()});
       try {
-        const references=selectFamilyReferences(item,items);
+        const references=selectFamilyReferences(item,uploaded);
         const referenceImages=await renderReferenceImages(references);
         setRequestProgress(p=>({...p,phase:'Waiting for OpenAI'}));
-        const response=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},signal:aborter.signal,body:JSON.stringify({brief:item.brief,standards,count,mode:'redesign',creativity,rules:normalizeSessionRules(item.sessionRules).rules.map(rule=>rule.text),references,referenceImages,feedback:batchFeedback.trim()||'Creatively redesign this icon. Preserve its meaning, rethink the geometry and make it belong to the shared visual family.',apiKey:apiKey||undefined,model:model||undefined})});
+        const response=await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},signal:aborter.signal,body:JSON.stringify({brief:item.brief,standards,count,mode:'redesign',creativity,rules:getItemSessionRules(item,iconSetSessions).rules.map(rule=>rule.text),references,referenceImages,feedback:(iconSetSessions.find(session=>session.id===item.sessionId)?.direction??batchFeedback).trim()||'Creatively redesign this icon. Preserve its meaning, rethink the geometry and make it belong to the shared visual family.',apiKey:apiKey||undefined,model:model||undefined})});
         const data=await response.json() as GenerationResult&{error?:string|{message?:string};code?:string};
         if(!response.ok)throw Object.assign(new Error(typeof data.error==='string'?data.error:data.error?.message||'Generation failed.'),{code:data.code});
         if(!Array.isArray(data.candidates)||data.candidates.length!==(standards.style==='both'?count*2:count))throw new Error('Incomplete alternatives returned.');
@@ -498,36 +522,44 @@ export default function Home() {
   }
 
   function setCandidateStatus(id:string,status:Candidate['status'],itemId=activeId) {
-    const item=items.find(value=>value.id===itemId);
-    if(!item||busy||status==='shortlisted')return;
-    const next=applyReviewDecision(item,id,status);
-    if(next===item)return;
-    setItems(previous=>previous.map(value=>value.id===itemId?next:value));
-    setInspect(previous=>previous?.id===id?next.candidates.find(candidate=>candidate.id===id)??previous:previous);
+    if(busy||status==='shortlisted')return;
+    const result=applySessionReviewDecision(items,iconSetSessions,itemId,id,status);
+    if(!result.context)return;
+    setItems(result.items);setIconSetSessions(result.sessions);
+    setInspect(previous=>previous?.id===id?result.reviewed??previous:previous);
     recordSession(itemId);
-    ruleLearning.request(next);
-    const reviewed=next.candidates.find(candidate=>candidate.id===id);
-    if(reviewed&&(reviewed.status==='accepted'||reviewed.status==='rejected')&&!next.sessionRules?.feedback.some(entry=>entry.candidateId===id))notice('Decision saved. This SVG is too complex for automatic rule suggestions; you can add a session rule manually.');
+    ruleLearning.request(result.context);
+    if(result.reviewed&&(result.reviewed.status==='accepted'||result.reviewed.status==='rejected')&&!result.context.sessionRules?.feedback.some(entry=>entry.candidateId===id))notice('Decision saved. This SVG is too complex for automatic rule suggestions; you can add a session rule manually.');
   }
 
   function changeSessionRules(value:SessionRules,itemId?:string,mode:'studio'|'refactor'='studio') {
     if(busy)return;
     const safe=normalizeSessionRules(value);
-    if(itemId){
+    const item=items.find(item=>item.id===itemId);
+    if(item?.sessionId){
+      ruleLearning.cancel(item.sessionId);
+      setIconSetSessions(previous=>previous.map(session=>session.id===item.sessionId?{...session,rules:safe}:session));
+      recordSession(item.sessionId);
+    }else if(itemId){
       ruleLearning.cancel(itemId);
       setItems(previous=>previous.map(item=>item.id===itemId?{...item,sessionRules:safe}:item));
       recordSession(itemId);
     }else setDraftRules(previous=>({...previous,[mode]:safe}));
   }
 
-  function sessionRulesPanel(item?:IconItem,mode:'studio'|'refactor'='studio') {
-    const state=item?item.sessionRules:draftRules[mode];
-    return <SessionRulesPanel key={item?.id??`draft-${mode}`} value={normalizeSessionRules(state)} onChange={value=>changeSessionRules(value,item?.id,mode)} disabled={!!busy} learning={item?ruleLearning.states[item.id]?.learning:false} error={item?ruleLearning.states[item.id]?.error:undefined} aiEnabled={connected&&useAI} onConnect={()=>setModal('connect')} onRetry={()=>{if(item)ruleLearning.request(item);}}/>;
+  function sessionRulesPanel(item?:IconItem,mode:'studio'|'refactor'='studio',placement:'workspace'|'sidebar'='workspace') {
+    const contextId=item?.sessionId??item?.id;
+    const context=ruleLearningItems.find(value=>value.id===contextId);
+    const value=item?getItemSessionRules(item,iconSetSessions):draftRules[mode];
+    const memberCount=item?.sessionId?items.filter(value=>value.sessionId===item.sessionId).length:0;
+    return <SessionRulesPanel key={`${placement}-${contextId??`draft-${mode}`}`} placement={placement} description={memberCount?`Applies to all ${memberCount} ${memberCount===1?'icon':'icons'} in this set. Suggestions need your approval.`:undefined} value={normalizeSessionRules(value)} onChange={value=>changeSessionRules(value,item?.id,mode)} disabled={!!busy} learning={contextId?ruleLearning.states[contextId]?.learning:false} error={contextId?ruleLearning.states[contextId]?.error:undefined} aiEnabled={connected&&useAI} onConnect={()=>setModal('connect')} onRetry={()=>{if(context)ruleLearning.request(context);}}/>;
   }
 
   async function upload(files:FileList|null) {
     if(!files || busy || uploadInFlight.current) return;
     const incoming=Array.from(files); const errors:string[]=[]; const added:StudioItem[]=[];
+    const targetSet=!isNew&&tab==='refactor'?activeSet:undefined;
+    const sessionId=targetSet?.id??uid();
     if(items.length+incoming.length>100) { setError('A workspace can hold up to 100 icons. Upload a smaller set.'); return; }
     uploadInFlight.current = true;
     try {
@@ -537,11 +569,20 @@ export default function Home() {
         if(file.size>200_000) throw new Error('SVG must be smaller than 200 KB.');
         const svg=sanitizeSvg(await file.text());
         const name=file.name.replace(/\.svg$/i,'').replace(/[-_]/g,' ');
-        added.push({id:uid(),name,sessionRules:normalizeSessionRules(draftRules.refactor),brief:`Refine this ${name} icon. Preserve its meaning and align it with the set.`,originalSvg:svg,candidates:[{id:uid(),name:'Original upload',svg,rationale:'Your source SVG, preserved for comparison.',status:'pending',source:'normalized'}],round:0,standards:{...standards}});
+        added.push({id:uid(),name,sessionId,brief:`Refine this ${name} icon. Preserve its meaning and align it with the set.`,originalSvg:svg,candidates:[{id:uid(),name:'Original upload',svg,rationale:'Your source SVG, preserved for comparison.',status:'pending',source:'normalized'}],round:0,standards:{...standards}});
       } catch(e) { errors.push(`${file.name}: ${e instanceof Error?e.message:'Could not read SVG.'}`); }
     }
     setUploadErrors(errors);
-    if(added.length) { setDraftRules(previous=>({...previous,refactor:emptySessionRules()})); setItems(old=>[...old,...added]); setBatchIds(old=>isNew?added.map(i=>i.id):[...old,...added.map(i=>i.id)]); setRecentSessionIds(previous=>[...added.map(item=>item.id),...previous].slice(0,101)); chooseIcon(added[0]); setSessionFocusRequest({itemId:added[0].id,focus:false}); setTab('refactor'); notice(`${added.length} ${added.length===1?'icon':'icons'} imported. All uploads are visible in your set.`); }
+    if(added.length) {
+      if(!targetSet){setIconSetSessions(previous=>[...previous,{id:sessionId,name:`${added[0].name} set`,rules:normalizeSessionRules(draftRules.refactor)}]);setDraftRules(previous=>({...previous,refactor:emptySessionRules()}));}
+      setItems(old=>[...old,...added]);
+      setBatchIds(old=>targetSet?[...old,...added.map(i=>i.id)]:added.map(i=>i.id));
+      setRecentSessionIds(previous=>[sessionId,...previous.filter(id=>id!==sessionId)].slice(0,101));
+      setActiveId(added[0].id);setBrief(added[0].brief);setIsNew(false);setFeedback('');setError('');setMobilePanel(null);
+      setSessionFocusRequest({itemId:added[0].id,focus:false});setTab('refactor');
+      if(!targetSet)setBatchFeedback('');
+      notice(`${added.length} ${added.length===1?'icon':'icons'} imported into one session.`);
+    }
     } finally {
       uploadInFlight.current = false;
       if(fileRef.current) fileRef.current.value='';
@@ -565,29 +606,29 @@ export default function Home() {
   function removeIcon(id:string) {
     removeIcons([id]);
   }
+  function retainWorkspaceItems(remaining:StudioItem[]) {
+    const familyIds=new Set(remaining.map(item=>item.id));
+    const sessionIds=new Set(remaining.flatMap(item=>item.sessionId?[item.sessionId]:[]));
+    const removedCandidates=new Set(items.filter(item=>!familyIds.has(item.id)).flatMap(item=>[...item.candidates,...(item.revisions??[]).flatMap(revision=>revision.candidates)].map(candidate=>candidate.id)));
+    setItems(remaining);
+    setIconSetSessions(previous=>previous.filter(session=>sessionIds.has(session.id)).map(session=>({...session,rules:normalizeSessionRules({...session.rules,feedback:session.rules.feedback.filter(entry=>!removedCandidates.has(entry.candidateId))})})));
+    setRecentSessionIds(previous=>previous.filter(id=>id===DRAFT_SESSION_ID||familyIds.has(id)||sessionIds.has(id)));
+    setBatchIds(previous=>previous.filter(id=>familyIds.has(id)));
+    setBatchStates(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>familyIds.has(id))));
+    const focused=remaining.find(item=>item.id===activeId)??(active?.sessionId?remaining.find(item=>item.sessionId===active.sessionId):undefined);
+    if(!focused){setActiveId('');setBrief(newBrief);setIsNew(true);}
+    else {setActiveId(focused.id);setBrief(focused.brief);if(tab!=='collection')setTab(focused.sessionId||focused.originalSvg?'refactor':'studio');}
+  }
   function removeIcons(ids:string[]) {
     if(busy)return;
     const removed=new Set(ids.filter(id=>items.some(item=>item.id===id)));
     if(!removed.size)return;
-    setItems(previous=>previous.filter(item=>!removed.has(item.id)));
-    setBatchIds(previous=>previous.filter(id=>!removed.has(id)));
-    setRecentSessionIds(previous=>previous.filter(id=>!removed.has(id)));
-    setBatchStates(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>!removed.has(id))));
-    if(removed.has(activeId)){setActiveId('');setBrief(newBrief);setIsNew(true);}
+    retainWorkspaceItems(items.filter(item=>!removed.has(item.id)));
     notice(`${removed.size} ${removed.size===1?'icon family':'icon families'} removed from this workspace.`);
   }
   function removeSelectedLibraryEntries(selection:LibrarySelection[]) {
     if(busy)return;
-    const remaining=removeLibraryEntries(items,selection);
-    const familyIds=new Set(remaining.map(item=>item.id));
-    const uploadedIds=new Set(remaining.filter(item=>item.originalSvg).map(item=>item.id));
-    setItems(remaining);
-    setRecentSessionIds(previous=>previous.filter(id=>id===DRAFT_SESSION_ID||familyIds.has(id)));
-    setBatchIds(previous=>previous.filter(id=>uploadedIds.has(id)));
-    setBatchStates(previous=>Object.fromEntries(Object.entries(previous).filter(([id])=>uploadedIds.has(id))));
-    const focused=remaining.find(item=>item.id===activeId);
-    if(!focused){setActiveId('');setBrief(newBrief);setIsNew(true);}
-    else if(tab==='refactor'&&!focused.originalSvg){setTab('studio');setBrief(focused.brief);}
+    retainWorkspaceItems(removeLibraryEntries(items,selection));
     notice('Selected SVGs removed. Other versions are preserved.');
   }
   function downloadLibraryItems(ids:string[]) {
@@ -607,7 +648,7 @@ export default function Home() {
   return <div className={`app-shell has-sidebar-brand ${acceptedSvgCount>0?'has-export-selection':''}`}>
     <nav className="mobile-tools"><button aria-expanded={mobilePanel==='icons'} aria-controls="workspace-sidebar" onClick={()=>setMobilePanel(mobilePanel==='icons'?null:'icons')}><Layers2 size={16}/>Workspace</button><button onClick={()=>setMobilePanel(mobilePanel==='standards'?null:'standards')}><SlidersHorizontal size={16}/>Standards</button></nav>
     <div className={`studio-layout ${sidebarCollapsed?'sidebar-collapsed':''}`}>
-      {sidebarCollapsed&&<button ref={expandSidebarRef} className="sidebar-toggle sidebar-expand-button sidebar-edge-toggle" aria-label="Expand sidebar" title="Expand sidebar" aria-expanded={false} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftOpen size={17}/></button>}
+      {sidebarCollapsed&&<CollapsedSidebar expandedButtonRef={expandSidebarRef} onExpand={toggleSidebar} onStudio={()=>switchWorkspace('studio')} onLibrary={()=>{setTab('collection');setMobilePanel(null);}} onSettings={()=>setModal('connect')} view={tab==='collection'?'collection':'studio'} busy={!!busy} aiEnabled={aiEnabled} libraryCount={items.length}/>}
       <aside id="workspace-sidebar" aria-label="Studio, library, and workspace" className={`sidebar ${mobilePanel==='icons'?'mobile-open':''}`}>
         <div className="sidebar-brand-row"><a className="brand" href="/" aria-label="iconoklast.app home"><Logo /><span>iconoklast<span className="brand-dot">.app</span></span></a><button ref={collapseSidebarRef} className="sidebar-toggle sidebar-collapse-button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftClose size={17}/></button><button className="sidebar-toggle sidebar-mobile-close" aria-label="Close icons sidebar" onClick={()=>setMobilePanel(null)}><X size={18}/></button></div>
         <div className="sidebar-project"><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
@@ -615,7 +656,7 @@ export default function Home() {
         <nav className="main-nav" aria-label="Workspace views">
           <button className={tab!=='collection'?'active':''} aria-current={tab!=='collection'?'page':undefined} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Icon studio</button>
           {recentSessions.length>0&&<div className="sidebar-sessions" role="group" aria-label="Recent studio sessions">
-            <ul>{visibleSessions.map(session=><li key={session.id}><button type="button" className={`sidebar-session-button ${tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&activeId===session.id)?'is-current':''}`} aria-pressed={tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&activeId===session.id)} disabled={!!busy} title={session.draft?newBrief:`Resume ${session.name}`} onClick={()=>session.draft?openNewIcon():openSession(session.id)}>
+            <ul>{visibleSessions.map(session=><li key={session.id}><button type="button" className={`sidebar-session-button ${tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&(active?.sessionId??activeId)===session.id)?'is-current':''}`} aria-pressed={tab!=='collection'&&(session.draft?isNew&&tab==='studio':!isNew&&(active?.sessionId??activeId)===session.id)} disabled={!!busy} title={session.draft?newBrief:`Resume ${session.name}`} onClick={()=>session.draft?openNewIcon():openSession(session.id)}>
               <span className={`sidebar-session-preview ${session.draft?'is-draft':''}`}>{session.draft?<PenTool size={13}/>:<SvgPreview svg={session.svg} size={16}/>}</span><span className="sidebar-session-name">{session.name}</span>
             </button></li>)}</ul>
             {recentSessions.length>5&&<button type="button" className="sidebar-sessions-toggle" aria-expanded={showAllSessions} onClick={()=>setShowAllSessions(value=>!value)}>{showAllSessions?'Show less':`Show all (${recentSessions.length})`}<ChevronDown size={12}/></button>}
@@ -650,20 +691,20 @@ export default function Home() {
           :tab==='refactor'?<>
             {hasActiveRedesign?<>
               <SetToolbar total={uploaded.length} selected={batchTargets.length} count={count} onCountChange={setCount}
-                brief={batchFeedback} onBriefChange={setBatchFeedback} connected={connected} busy={!!busy}
+                brief={batchFeedback} onBriefChange={value=>{setBatchFeedback(value);if(activeSet){ruleLearning.cancel(activeSet.id);setIconSetSessions(previous=>previous.map(session=>session.id===activeSet.id?{...session,direction:value}:session));}}} connected={connected} busy={!!busy}
                 canRecolor={batchTargets.some(i=>i.round>0)} onAddSvgs={()=>fileRef.current?.click()} onRecolor={applyPalette}
                 onRedesign={refactorUploadedSet} onCancel={()=>controller.current?.abort()} onConnect={()=>setModal('connect')}
                 onToggleAll={()=>setBatchIds(batchTargets.length===uploaded.length?[]:uploaded.map(i=>i.id))}
                 showGuides={showConstructionGuides} onShowGuidesChange={setShowConstructionGuides}
                 proportionLabel={standards.proportion==='square'?'1:1 artwork':'Natural proportions'} gridLabel={GRID_LABELS[standards.constructionGrid||'none']}/>
               {busy&&busy!=='fit'&&<GenerationProgress {...requestProgress} count={count} completed={busy==='batch'?batchProgress.done:0} total={busy==='batch'?batchProgress.total:1}/>}
+              {sessionRulesPanel(active,'refactor')}
               <IconSetBoard darkCanvas={darkCanvas} standards={standards} showGuides={showConstructionGuides} items={uploaded} selectedIds={batchIds} activeId={activeId} busy={!!busy} states={batchStates}
                 onToggle={id=>setBatchIds(old=>old.includes(id)?old.filter(i=>i!==id):[...old,id])}
                 onFocus={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);}}
                 onBriefChange={(id,value)=>{recordSession(id);setItems(old=>old.map(i=>i.id===id?{...i,brief:value}:i));if(id===activeId)setBrief(value);}}
                 onRedesign={id=>{const i=items.find(i=>i.id===id);if(i)void generate('redesign',i);}}
                 onStatus={(itemId,id,status)=>setCandidateStatus(id,status,itemId)}
-                renderRules={item=>sessionRulesPanel(item,'refactor')}
                 onInspect={(itemId,c)=>{const i=items.find(i=>i.id===itemId);if(i)chooseIcon(i);setInspect(c);}}
                 onHistory={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);setModal('history');}}/>
             </>:<><SvgUploadDropzone disabled={!!busy} onBrowse={()=>fileRef.current?.click()} onFiles={upload}/>{sessionRulesPanel(undefined,'refactor')}</>}
@@ -677,9 +718,10 @@ export default function Home() {
 
             {!isNew&&active&&<>
               <div className="results-toolbar"><div className="results-title"><strong>{active.name} · {directionCount(candidates)} {active.round===0?'original':candidates.some(c=>c.pairId)?'paired directions':'alternatives'}</strong><span className="round-pill">Round {active.round||'0'}</span><button className="icon-button small" title="Version history" aria-label="Version history" onClick={()=>setModal('history')}><History size={14}/></button></div><div className="canvas-controls"><div className="size-controls">{[24,48,64].map(n=><button key={n} className={size===n?'active':''} onClick={()=>setSize(n)} aria-label={`Preview at ${n} pixels`}>{n}</button>)}</div><span className="control-separator"/><button className={`icon-button small ${showGrid?'toggled':''}`} title="Toggle grid" aria-label="Toggle preview grid" aria-pressed={showGrid} onClick={()=>setShowGrid(!showGrid)}><Grid2X2 size={15}/></button></div></div>
-              <div className="construction-review-tools"><span>{standards.proportion==='square'?'1:1 artwork target':'Natural proportions'} · {GRID_LABELS[standards.constructionGrid||'none']}</span><label><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label></div>
+              <div className="construction-review-tools">{rejectedCount>0&&<button className="rejected-visibility-toggle" type="button" aria-pressed={showRejected} onClick={()=>setShowRejected(value=>!value)}>{showRejected?'Hide rejected':`Show rejected (${rejectedCount})`}</button>}<span>{standards.proportion==='square'?'1:1 artwork target':'Natural proportions'} · {GRID_LABELS[standards.constructionGrid||'none']}</span><label><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label></div>
+              {visibleCandidates.length===0&&rejectedCount>0&&<div className="rejected-empty-state"><strong>All directions rejected</strong><p>Generate another round or show rejected icons to revisit a choice.</p><button type="button" className="text-button" onClick={()=>setShowRejected(true)}>Show rejected ({rejectedCount})</button></div>}
               <div className={`candidate-grid ${darkCanvas?'dark-canvas':''} ${showGrid?'with-grid':''} ${busy?'generating':''}`}>
-                {candidates.map(c=><article key={c.id} className={`candidate-card review-card ${c.status==='accepted'?'is-accepted':''} ${c.status==='rejected'?'is-rejected':''}`}>
+                {visibleCandidates.map(c=><article key={c.id} className={`candidate-card review-card ${c.status==='accepted'?'is-accepted':''} ${c.status==='rejected'?'is-rejected':''}`}>
                   <div className="card-topline"><span className="direction-letter">{directionLetter(c,candidates)}</span>{c.status==='accepted'?<span className="accepted-label"><Check size={11}/>Accepted</span>:c.status==='rejected'?<span className="rejected-label"><X size={11}/>Rejected</span>:<span className="card-source">{c.source==='ai'?'AI DIRECTION':c.source==='demo'?'DEMO':c.source==='edited'?'EDITED':'SVG'}</span>}</div>
                   <button className="icon-canvas" onClick={()=>setInspect(c)} aria-label={`Preview ${c.name}`}><SvgPreview svg={c.svg} size={size} standards={standards} showGuides={showConstructionGuides}/></button>
                   <div className="candidate-caption"><strong>{c.name}</strong>{c.treatment&&<em className="treatment-badge">{versionLabel(c)}</em>}</div>
@@ -699,8 +741,12 @@ export default function Home() {
         </div>
       </main>
 
-      <aside className={`standards-panel compact-standards-panel ${mobilePanel==='standards'?'mobile-open':''}`}>
+      <aside aria-label="Your standards" className={`standards-panel compact-standards-panel ${mobilePanel==='standards'?'mobile-open':''}`}>
         <div className="panel-heading"><span><SlidersHorizontal size={17}/><strong>Your standards</strong></span><span className="live-indicator"/></div><p className="panel-subtitle">One system for every icon.</p>
+        <div className="sidebar-session-rules">
+          <p className="sidebar-rules-context">{!isNew&&active?(activeSet?.name??active.name):tab==='refactor'?'New redesign session':'New design session'}</p>
+          {sessionRulesPanel(!isNew?active:undefined,tab==='refactor'?'refactor':'studio','sidebar')}
+        </div>
         <StandardsControls standards={standards} onChange={updateStandards} creativity={creativity} onCreativityChange={setCreativity} disabled={!!busy} count={count} canFit={items.some(item=>item.candidates.some(candidate=>candidate.svg!==item.originalSvg))} fitting={busy==='fit'} onFit={()=>void fitExistingDesigns()}/>
         <div className="standard-actions compact-standards-actions"><p>Grid and stroke update live. Other settings guide new designs.</p><button className="text-button tertiary" onClick={()=>{const name=`${standards.colorMode!=='mono'?'Color':'Mono'} · ${standards.corner==='square'?'Rough':'Rounded'} · ${standards.style==='duotone'?'Color':standards.style==='line'?'Outlined':standards.style[0].toUpperCase()+standards.style.slice(1)} · ${standards.proportion==='square'?'1:1':'Natural'} · ${GRID_LABELS[standards.constructionGrid||'none']} · ${standards.perspective==='isometric'?'Isometric':'Face-on'} · ${standards.strokeWidth}u · R${standards.corner==='square'?0:standards.cornerRadius??1} · ${standards.gridSize}×${standards.gridSize}`;setPresets(p=>[...p.filter(x=>x.name!==name),{name,standards:{...standards}}].slice(-8));notice('Preset saved on this device.');}}><Plus size={13}/>Save as a preset</button>{presets.length>0&&<StudioSelect size="sm" label="Load standards preset" placeholder="Load a saved preset…" value="" disabled={!!busy} onValueChange={value=>{const p=presets.find(p=>p.name===value);if(p){updateStandards({...DEFAULT_STANDARDS,...p.standards,colorMode:p.standards.colorMode??(p.standards.style==='duotone'?'duo':'mono'),style:p.standards.style==='duotone'?'filled':p.standards.style});notice('Preset loaded. Canvas grid and stroke weight updated; other settings guide your next generation.');}}} options={presets.map(p=>({value:p.name,label:p.name}))}/>}</div>
       </aside>
@@ -710,7 +756,7 @@ export default function Home() {
 
     {editing&&<VectorEditor darkCanvas={darkCanvas} onToggleDarkCanvas={()=>setDarkCanvas(value=>!value)} standards={standards} svg={editing.candidate.svg} name={items.find(i=>i.id===editing.itemId)?.name||editing.candidate.name} onSave={saveVectorEdit} onClose={()=>setEditing(null)}/>}
     {(modal||inspect)&&<div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget){connectionController.current?.abort();setModal(null);setInspect(null);}}}><div ref={dialogRef} className={`modal ${inspect?'inspect-modal':''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close icon-button" aria-label="Close dialog" onClick={()=>{connectionController.current?.abort();setModal(null);setInspect(null);}}><X size={20}/></button>
-      {modal==='connect'&&<><span className="modal-icon"><KeyRound size={25}/></span><div className="eyebrow">LLM API SETTINGS</div><h2 id="modal-title">Your AI connection</h2><p>Choose a model and connect your OpenAI key. You can remember it on this browser.</p>{connected&&<div className="ai-generation-setting"><label><input type="checkbox" checked={useAI} disabled={!!busy||connectionBusy||forgettingKey} onChange={e=>setUseAI(e.target.checked)}/><span>Use AI for new designs</span></label><p>Switch off for demo previews. Redesigns, refinements, and isometric designs always use AI. Your saved key stays connected.</p></div>}<label className="field-label" htmlFor="api-key">OpenAI API key</label><input id="api-key" className="text-input" type="password" autoComplete="off" value={keyDraft} disabled={connectionBusy} onChange={e=>{setKeyDraft(e.target.value);setConnectionError('');}} placeholder={connected?'An AI connection is already active':'sk-…'}/><label className="field-label" htmlFor="model-name">Model</label><div className="model-presets" role="group" aria-label="Choose an AI model">{[{id:'gpt-6-astra',name:'GPT-6 Astra',detail:'Most capable · Higher cost'},{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',detail:'Balanced · Lower cost'}].map(option=><button key={option.id} type="button" disabled={connectionBusy||!!busy} aria-pressed={model===option.id} className={model===option.id?'chosen':''} onClick={()=>{setModel(option.id);setConnectionVerified(false);setConnectionError('');}}><strong>{option.name}</strong><span>{option.detail}</span></button>)}</div><input id="model-name" className="text-input" value={model} disabled={connectionBusy||!!busy} maxLength={80} onChange={e=>{setModel(e.target.value);setConnectionVerified(false);setConnectionError('');}} placeholder="Default model"/><p className="model-help">Your model choice is remembered. Verify access with your OpenAI key before generating.{model==='gpt-6-astra'&&<> Astra costs more per token than Sol. <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noreferrer">View model details ↗</a></>}</p>{keySaved&&!keyDraft.trim()?<div className="remembered-key-status"><ShieldCheck size={17}/><span><strong>Key remembered on this browser</strong><small>Your connection survives refreshes. Use Forget key to remove it.</small></span></div>:<div className="remember-key-setting"><label><input type="checkbox" checked={rememberKey} disabled={!rememberAvailable||connectionBusy||forgettingKey} onChange={e=>setRememberKey(e.target.checked)}/><span>Remember my key</span></label><p>{rememberAvailable?'Encrypted and saved for 30 days on this browser.':'Remembering keys is unavailable on this instance.'}</p></div>}<div className="privacy-note"><ShieldCheck size={17}/><span>{rememberKey?'iconoklast.app encrypts your key in a private browser cookie that only the server can read. It is kept out of your workspace and page storage.':'Without Remember my key, your token stays in this tab’s memory and clears on refresh.'} Usage is billed to your OpenAI account.</span></div>{serverConfigured&&<div className="connection-notice"><Check size={14}/>A server connection is configured.</div>}{connectionError&&<div className="message error" role="alert">{connectionError}</div>}<button className="button primary full" disabled={connectionBusy||forgettingKey||(!keyDraft.trim()&&!connected)} onClick={connectAI}>{connectionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>} {connectionBusy?'Checking key and model…':rememberKey&&!keySaved?'Verify and save key':'Verify and connect'}</button>{connected&&<button className="text-button disconnect" disabled={connectionBusy||forgettingKey} onClick={forgetAIKey}>{forgettingKey?'Forgetting key…':keySaved?'Forget key & use demo mode':'Clear token & use demo mode'}</button>}<small className="modal-small">{keySaved?'Your saved key is encrypted and expires after 30 days.':'Choose Remember my key before connecting to keep it after refresh.'} Your uploaded icons and designs stay on this device.</small></>}
+      {modal==='connect'&&<><span className="modal-icon"><KeyRound size={25}/></span><div className="eyebrow">LLM API SETTINGS</div><h2 id="modal-title">Your AI connection</h2><p>Choose a model and connect your OpenAI key. You can remember it on this browser.</p>{connected&&<div className="ai-generation-setting"><label><input type="checkbox" checked={useAI} disabled={!!busy||connectionBusy||forgettingKey} onChange={e=>setUseAI(e.target.checked)}/><span>Use AI for new designs</span></label><p>Switch off for demo previews. Redesigns, refinements, and isometric designs always use AI. Your saved key stays connected.</p></div>}<label className="field-label" htmlFor="api-key">OpenAI API key</label><input id="api-key" className="text-input" type="password" autoComplete="off" value={keyDraft} disabled={connectionBusy} onChange={e=>{setKeyDraft(e.target.value);setConnectionError('');}} placeholder={connected?'Paste a replacement key (optional)':'Paste your OpenAI API key'}/><label className="field-label" htmlFor="model-name">Model</label><div className="model-presets" role="group" aria-label="Choose an AI model">{[{id:'gpt-6-astra',name:'GPT-6 Astra',detail:'Most capable · Higher cost'},{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',detail:'Balanced · Lower cost'}].map(option=><button key={option.id} type="button" disabled={connectionBusy||!!busy} aria-pressed={model===option.id} className={model===option.id?'chosen':''} onClick={()=>{setModel(option.id);setConnectionVerified(false);setConnectionError('');}}><strong>{option.name}</strong><span>{option.detail}</span></button>)}</div><input id="model-name" onPaste={event=>{const value=event.clipboardData.getData('text');if(isApiKeyLike(value)){event.preventDefault();setKeyDraft(value.trim().replace(/^Bearer\s+/i,''));setConnectionVerified(false);setConnectionError('That looks like an API key. It has been moved to the API key field above. Choose a model below.');}}} className="text-input" value={model} disabled={connectionBusy||!!busy} maxLength={80} onChange={e=>{const value=e.target.value;if(isApiKeyLike(value)){setKeyDraft(value.trim());setConnectionError('That looks like an API key. It has been moved to the API key field above. Choose a model below.');}else{setModel(value);setConnectionError('');}setConnectionVerified(false);}} placeholder="Model ID, e.g. gpt-6.1-sol"/><p className="model-help">Your model choice is remembered. Verify access with your OpenAI key before generating.{model==='gpt-6-astra'&&<> Astra costs more per token than Sol. <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noreferrer">View model details ↗</a></>}</p>{keySaved&&!keyDraft.trim()?<div className="remembered-key-status"><ShieldCheck size={17}/><span><strong>Key remembered on this browser</strong><small>Your connection survives refreshes. Use Forget key to remove it.</small></span></div>:<div className="remember-key-setting"><label><input type="checkbox" checked={rememberKey} disabled={!rememberAvailable||connectionBusy||forgettingKey} onChange={e=>setRememberKey(e.target.checked)}/><span>Remember my key</span></label><p>{rememberAvailable?'Encrypted and saved for 30 days on this browser.':'Remembering keys is unavailable on this instance.'}</p></div>}<div className="privacy-note"><ShieldCheck size={17}/><span>{rememberKey?'iconoklast.app encrypts your key in a private browser cookie that only the server can read. It is kept out of your workspace and page storage.':'Without Remember my key, your token stays in this tab’s memory and clears on refresh.'} Usage is billed to your OpenAI account.</span></div>{serverConfigured&&<div className="connection-notice"><Check size={14}/>A server connection is configured.</div>}{connectionError&&<div className="message error" role="alert">{connectionError}</div>}<button className="button primary full" disabled={connectionBusy||forgettingKey||(!keyDraft.trim()&&!connected)} onClick={connectAI}>{connectionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>} {connectionBusy?'Checking key and model…':rememberKey&&!keySaved?'Verify and save key':'Verify and connect'}</button>{connected&&<button className="text-button disconnect" disabled={connectionBusy||forgettingKey} onClick={forgetAIKey}>{forgettingKey?'Forgetting key…':keySaved?'Forget key & use demo mode':'Clear token & use demo mode'}</button>}<small className="modal-small">{keySaved?'Your saved key is encrypted and expires after 30 days.':'Choose Remember my key before connecting to keep it after refresh.'} Your uploaded icons and designs stay on this device.</small></>}
       {modal==='help'&&<><span className="modal-icon"><Sparkles size={26}/></span><div className="eyebrow">Welcome to iconoklast.app</div><h2 id="modal-title">A family of icons.<br/>A process that feels natural.</h2><div className="help-steps"><div><b>01</b><span><strong>Define your visual language</strong>Pick a style, weight, canvas, corners, and palette.</span></div><div><b>02</b><span><strong>Create or bring your own</strong>Write an icon brief, or upload a set of SVG files.</span></div><div><b>03</b><span><strong>Explore. Choose. Refine.</strong>Compare alternatives, accept or reject directions, and approve suggested rules for your next round.</span></div><div><b>04</b><span><strong>Take your icons anywhere</strong>Export accepted icons as SVG. Your workspace saves automatically in this browser.</span></div></div><button className="button primary full" onClick={()=>setModal(null)}>Let’s make something<ArrowRight size={16}/></button></>}
       {modal==='history'&&<><span className="modal-icon"><History size={26}/></span><h2 id="modal-title">Room to explore.</h2><p>Every previous round stays here. Restore a direction whenever you need it.</p><div className="history-list">{active?.revisions?.length?([...active.revisions].reverse()).map((r,idx)=><div className="history-item" key={idx}><div className="history-thumbs">{r.candidates.slice(0,3).map(c=><SvgPreview key={c.id} svg={c.svg} size={28}/>)}</div><span><strong>Round {r.round}</strong><small>{r.candidates.length} directions · {r.standards.style}</small></span><button className="button secondary" onClick={()=>restoreRevision(r)}>Restore</button></div>):<div className="empty-history">Your next generation will save this round here.</div>}</div></>}
       {inspect&&<><div className="eyebrow">A CLOSER LOOK</div><div className="inspect-title-row"><h2 id="modal-title">{inspect.name}</h2><button className="button primary" disabled={!!busy} onClick={()=>openEditor(inspect)}><PenTool size={15}/>Edit icon</button></div>{inspect.treatment&&<span className="treatment-badge">{versionLabel(inspect)}</span>}<div className={`inspect-canvas ${darkCanvas?'dark-canvas':''}`}><SvgPreview svg={inspect.svg} size={200} standards={standards} showGuides={showConstructionGuides}/></div>{inspectedCanvas&&<p className="inspect-unit-caption">{inspectedCanvas.width} × {inspectedCanvas.height} grid · 1 square = 1 unit = 1 export pixel</p>}<div className="inspect-grid-actions"><PreviewBackgroundToggle dark={darkCanvas} onToggle={()=>setDarkCanvas(value=>!value)}/><label className="inspect-guide-toggle"><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label><button className="button secondary" disabled={!!busy||items.some(item=>item.originalSvg===inspect.svg)} onClick={()=>void fitExistingDesigns(standards,inspect.id)}>{busy==='fit'?<LoaderCircle size={14} className="spin"/>:<Maximize2 size={14}/>}Fit to {artworkSpan} × {artworkSpan}</button></div><p className="inspect-fit-target">{artworkFit.mode==='keyline'?'Keyline target':'Custom target'}: <strong>{artworkSpan} × {artworkSpan} u</strong> · Padding {artworkPadding} u · Stroke {standards.strokeWidth} u</p>{fitFeedback&&(!fitFeedback.candidateId||fitFeedback.candidateId===inspect.id)&&<p className={`inspect-fit-feedback${fitFeedback.error?' error':''}`} role={fitFeedback.error?'alert':'status'}>{fitFeedback.message}</p>}<IconMetrics svg={inspect.svg} targetSquare={standards.proportion==='square'}/><div className="inspect-design-notes"><strong>Design notes</strong><p>{inspect.rationale||'Review this direction against your brief and session rules.'}</p></div><div className={`inspect-sizes ${darkCanvas?'dark-previews':''}`}>{[16,24,32,48].map(n=><div key={n}><SvgPreview svg={inspect.svg} size={n}/><span>{n}px</span></div>)}</div><div className="modal-buttons"><button className="button secondary" onClick={()=>{navigator.clipboard.writeText(inspect.svg).then(()=>notice('SVG copied to your clipboard.')).catch(()=>notice('Clipboard unavailable. Download the SVG instead.'));}}><Copy size={15}/>Copy SVG</button><button className="button primary" onClick={()=>exportSvg(inspect.svg,candidateFileName(active?.name||inspect.name,inspect))}><Download size={15}/>Download SVG</button></div><details className="svg-code"><summary>View SVG source<FileCode2 size={14}/></summary><pre>{inspect.svg}</pre></details></>}

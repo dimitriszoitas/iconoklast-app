@@ -24,6 +24,7 @@ export type BooleanOperation = "unite" | "subtract" | "intersect" | "exclude";
 export type VectorPoint = { x: number; y: number };
 export type VectorAnchor = { contour: number; index: number; point: VectorPoint; handleIn: VectorPoint; handleOut: VectorPoint; closed: boolean };
 export type VectorAnchorRef = { contour: number; index: number };
+export type VectorAnchorSelection = VectorAnchorRef & { id: string };
 export type VectorCurveRef = { contour: number; index: number };
 export type VectorBounds = { x: number; y: number; width: number; height: number };
 export type VectorMatrix = { a: number; b: number; c: number; d: number; tx: number; ty: number };
@@ -533,6 +534,86 @@ export function joinShapeEndpoints(scope: paper.PaperScope, firstShape: VectorSh
     joined = new scope.CompoundPath({ children: allPaths.filter((path) => path !== b).map((path) => path.clone({ insert: false })), insert: false });
     return { ...firstShape, ...serializeItem(joined) };
   } finally { joined?.remove(); first.remove(); if (second !== first) second.remove(); }
+}
+
+export type AnchorConnectionState = { allowed: boolean; kind: "join" | "close" | "segment" | null; reason: string };
+const samePoint = (a: VectorPoint, b: VectorPoint) => Math.hypot(a.x - b.x, a.y - b.y) < 1e-8;
+const visiblePaint = (paint: string) => !!paint && !["none", "transparent"].includes(paint.toLowerCase()) && !/^rgba\([^)]*,\s*0(?:\.0*)?\s*\)$/i.test(paint);
+const visibleStroke = (shape: VectorShape) => visiblePaint(shape.stroke) && shape.strokeWidth > 0 && shape.opacity > 0;
+const opaquePaint = (paint: string) => /^#[\da-f]{8}$/i.test(paint) ? paint.slice(-2).toLowerCase() === "ff" : /^#[\da-f]{4}$/i.test(paint) ? paint.slice(-1).toLowerCase() === "f" : /^(?:rgba|hsla)\(/i.test(paint) ? /,\s*1(?:\.0*)?\s*\)$/.test(paint) : !paint.includes("/");
+
+/** Connecting filled, differently painted or branching paths must not repaint or
+ * replace their existing contours. Those connections get their own stroke.
+ */
+export function anchorConnectionState(scope: paper.PaperScope, shapes: VectorShape[], selected: VectorAnchorSelection[]): AnchorConnectionState {
+  const unavailable = (reason: string): AnchorConnectionState => ({ allowed: false, kind: null, reason });
+  if (selected.length !== 2) return unavailable("Select two anchors to connect. Shift-click points or Cmd/Ctrl-drag a selection box.");
+  const [firstRef, secondRef] = selected;
+  const first = shapes.find(shape => shape.id === firstRef.id), second = shapes.find(shape => shape.id === secondRef.id);
+  if (!first || !second) return unavailable("Select two anchors that are still in the artwork.");
+  const firstAnchors = shapeAnchors(scope, first), secondAnchors = first === second ? firstAnchors : shapeAnchors(scope, second);
+  const a = firstAnchors.find(anchor => anchor.contour === firstRef.contour && anchor.index === firstRef.index);
+  const b = secondAnchors.find(anchor => anchor.contour === secondRef.contour && anchor.index === secondRef.index);
+  if (!a || !b) return unavailable("Select two anchors that are still in the artwork.");
+  const sameContour = first === second && a.contour === b.contour;
+  const aCount = firstAnchors.filter(anchor => anchor.contour === a.contour).length;
+  const bCount = secondAnchors.filter(anchor => anchor.contour === b.contour).length;
+  if (sameContour && a.index === b.index) return unavailable("Select two different anchors.");
+  if (sameContour && (Math.abs(a.index - b.index) === 1 || (a.closed && Math.abs(a.index - b.index) === aCount - 1))) return unavailable("These anchors are already connected by a segment.");
+  const endpoint = (anchor: VectorAnchor, count: number) => !anchor.closed && count > 1 && (anchor.index === 0 || anchor.index === count - 1);
+  const bothEndpoints = endpoint(a, aCount) && endpoint(b, bCount);
+  const paintKeys = ["stroke", "strokeWidth", "opacity", "lineCap", "lineJoin", "fillRule", "dashArray", "dashOffset", "miterLimit", "cornerRadius"] as const;
+  const compatible = first.fill === "none" && second.fill === "none" && visibleStroke(first) && visibleStroke(second)
+    && paintKeys.every(key => first[key] === second[key]) && !(first.dashArray && first.dashArray !== "none") && !first.cornerRadius
+    && (first === second || (Math.abs(shapes.indexOf(first) - shapes.indexOf(second)) === 1 && first.opacity === 1 && opaquePaint(first.stroke)));
+  const kind = sameContour && bothEndpoints ? "close" : bothEndpoints && compatible ? "join" : "segment";
+  if (samePoint(a.point, b.point)) {
+    if (kind === "segment") return unavailable("These anchors already touch. Move one to add a visible connection.");
+    return { allowed: true, kind, reason: "Merge the touching open endpoints without changing their curves." };
+  }
+  // Avoid adding the same separate connector twice, including after reselecting
+  // points on the original closed paths rather than on the connector itself.
+  for (const shape of shapes) {
+    if (!visibleStroke(shape)) continue;
+    const anchors = shapeAnchors(scope, shape);
+    for (const start of anchors) {
+      const contour = anchors.filter(anchor => anchor.contour === start.contour);
+      const end = contour[start.index + 1] || (start.closed ? contour[0] : undefined);
+      if (!end || Math.hypot(start.handleOut.x, start.handleOut.y, end.handleIn.x, end.handleIn.y) > 1e-8) continue;
+      if ((samePoint(start.point, a.point) && samePoint(end.point, b.point)) || (samePoint(start.point, b.point) && samePoint(end.point, a.point))) return unavailable("These anchors already have a connecting segment.");
+    }
+  }
+  return { allowed: true, kind, reason: kind === "close" ? "Close this open contour between the selected anchors." : kind === "join" ? "Join these open endpoints into one editable path." : "Add a connecting line while keeping both original paths and their styles." };
+}
+
+/** Connect exactly two anchors as one undoable document change. */
+export function connectAnchors(scope: paper.PaperScope, document: VectorDocument, selected: VectorAnchorSelection[], defaults: Partial<VectorShape> = {}): { document: VectorDocument; selectedIds: string[]; kind: "join" | "close" | "segment" } {
+  const state = anchorConnectionState(scope, document.shapes, selected);
+  if (!state.allowed || !state.kind) throw new Error(state.reason);
+  const [firstRef, secondRef] = selected;
+  const first = document.shapes.find(shape => shape.id === firstRef.id)!;
+  const second = document.shapes.find(shape => shape.id === secondRef.id)!;
+  const a = shapeAnchors(scope, first).find(anchor => anchor.contour === firstRef.contour && anchor.index === firstRef.index)!;
+  const b = shapeAnchors(scope, second).find(anchor => anchor.contour === secondRef.contour && anchor.index === secondRef.index)!;
+  let shapes = document.shapes;
+  let selectedIds: string[] = [];
+  if (state.kind === "join" || state.kind === "close") {
+    const joined = joinShapeEndpoints(scope, first, firstRef, second, secondRef);
+    const last = Math.max(shapes.indexOf(first), shapes.indexOf(second));
+    shapes = shapes.flatMap((shape, index) => index === last ? [joined] : shape.id === first.id || shape.id === second.id ? [] : [shape]);
+    selectedIds = [joined.id];
+    // A fill-only open path has an implicit closing fill but no visible closing
+    // stroke. Add only the requested edge, without outlining the whole shape.
+    if (state.kind === "join" || visibleStroke(first) || samePoint(a.point, b.point)) return { document: { ...document, shapes }, selectedIds, kind: state.kind };
+  }
+  const paintSource = [first, second].find(visibleStroke) || [first, second].find(shape => visiblePaint(shape.fill) && shape.opacity > 0);
+  const stroke = paintSource ? visibleStroke(paintSource) ? paintSource.stroke : paintSource.fill : visiblePaint(defaults.stroke || "") ? defaults.stroke! : "#231c2a";
+  const weight = paintSource && visibleStroke(paintSource) ? paintSource.strokeWidth : defaults.strokeWidth && defaults.strokeWidth > 0 ? defaults.strokeWidth : 1.5;
+  const connector = createVectorShape(`M${a.point.x},${a.point.y}L${b.point.x},${b.point.y}`, {
+    name: "Connection", fill: "none", stroke, strokeWidth: weight,
+    opacity: paintSource?.opacity || 1, lineCap: paintSource?.lineCap || defaults.lineCap || "round", lineJoin: paintSource?.lineJoin || defaults.lineJoin || "round",
+  });
+  return { document: { ...document, shapes: [...shapes, connector] }, selectedIds: [...selectedIds, connector.id], kind: state.kind };
 }
 
 /** Compound paths intentionally share the backmost path's paint and use holes. */

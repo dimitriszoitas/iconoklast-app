@@ -16,3 +16,8 @@
 .inspect-title-row h2{margin:0;min-width:0}
 .inspect-title-row .button{flex-shrink:0}
 @media(max-width:600px){.inspect-title-row{align-items:flex-start;flex-direction:column}}
+
+.construction-review-tools .rejected-visibility-toggle { min-height: 30px; padding: 5px 9px; border: 1px solid #bfcde1; border-radius: 6px; background: #ffffffa8; color: #526784; font-size: 12px; }
+.rejected-empty-state { padding: 30px 18px; border: 1px dashed #bfcde1; border-radius: 10px; text-align: center; color: #526784; background: #ffffff50; }
+.rejected-empty-state strong { display: block; color: #34465d; font-size: 14px; }
+.rejected-empty-state p { margin: 7px 0 12px; font-size: 12px; line-height: 1.6; }

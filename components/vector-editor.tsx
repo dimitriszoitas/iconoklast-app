@@ -8,15 +8,15 @@ import type paper from "paper";
 import type { Standards } from "../lib/icon-types";
 import { GuideShapes } from "./construction-guide";
 import { loadPaper, disposePaperScope } from "../lib/load-paper";
-import { ArrowDown, ArrowUp, Check, ChevronLeft, Circle, Copy, CornerDownLeft, Crosshair, Hand, Layers, Maximize2, Minus, MousePointer2, PenTool, Plus, Redo2, Scissors, Square, Trash2, Undo2, X } from "lucide-react";
-import { renderedPathData, recoverEditableCorners, addAnchor, nearestAnchor, nearestCurve, curveAnchorRefs, divideShapes, makeCompoundShape, releaseCompoundShape, reverseShape, joinShapeEndpoints, continuePenPath, splitShapeAtAnchor, translateAnchors, deleteAnchors, selectionBounds, resizeShape, rotateShape, flipShape, appendPenPoint, changeAnchor, closeContour, closeShape, combineShapes, createVectorShape, exportVectorSvg, importVectorSvg, moveAnchor, shapeAnchors, shapeBounds, translateShape, vectorId, type BooleanOperation, type VectorDocument, type VectorPoint, type VectorShape } from "../lib/vector-editor-geometry";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, Circle, Copy, CornerDownLeft, Crosshair, Hand, Layers, Link2, Maximize2, Minus, MousePointer2, PenTool, Plus, Redo2, Scissors, Square, Trash2, Undo2, X } from "lucide-react";
+import { renderedPathData, recoverEditableCorners, addAnchor, nearestAnchor, nearestCurve, curveAnchorRefs, divideShapes, makeCompoundShape, releaseCompoundShape, reverseShape, anchorConnectionState, connectAnchors, continuePenPath, splitShapeAtAnchor, translateAnchors, deleteAnchors, selectionBounds, resizeShape, rotateShape, flipShape, appendPenPoint, changeAnchor, closeContour, closeShape, combineShapes, createVectorShape, exportVectorSvg, importVectorSvg, moveAnchor, shapeAnchors, shapeBounds, translateShape, vectorId, type BooleanOperation, type VectorDocument, type VectorPoint, type VectorShape } from "../lib/vector-editor-geometry";
 import "./vector-editor.css";
 import "./geometry-settings.css";
 
 type ToolName = "select" | "direct" | "pen" | "rectangle" | "ellipse" | "hand" | "add" | "remove" | "convert";
 type AnchorSelection = { id: string; contour: number; index: number };
 type Bounds = { x: number; y: number; width: number; height: number };
-type Drag = { kind: "move" | "anchor" | "pen" | "shape" | "pan" | "marquee" | "resize" | "rotate"; start: VectorPoint; clientX: number; clientY: number; before: VectorDocument; ids?: string[]; id?: string; contour?: number; index?: number; handle?: "point" | "handleIn" | "handleOut"; view?: ViewBox; scale?: number; shapeType?: "rectangle" | "ellipse"; anchors?: AnchorSelection[]; additive?: boolean; direct?: boolean; bounds?: Bounds; grip?: string; center?: VectorPoint };
+type Drag = { kind: "move" | "anchor" | "pen" | "shape" | "pan" | "marquee" | "resize" | "rotate"; start: VectorPoint; clientX: number; clientY: number; before: VectorDocument; ids?: string[]; id?: string; contour?: number; index?: number; handle?: "point" | "handleIn" | "handleOut"; view?: ViewBox; scale?: number; shapeType?: "rectangle" | "ellipse"; anchors?: AnchorSelection[]; additive?: boolean; direct?: boolean; clickAnchors?: AnchorSelection[]; clickShapeId?: string; bounds?: Bounds; grip?: string; center?: VectorPoint };
 type ViewBox = { x: number; y: number; width: number; height: number };
 const toolList: { id: ToolName; title: string; key: string; Icon: typeof MousePointer2 }[] = [
   { id: "select", title: "Select", key: "V", Icon: MousePointer2 },
@@ -30,8 +30,8 @@ const toolList: { id: ToolName; title: string; key: string; Icon: typeof MousePo
   { id: "hand", title: "Pan", key: "H", Icon: Hand },
 ];
 const hints: Record<ToolName, string> = {
-  select: "Select and drag paths. Drag handles to resize; Shift constrains, Alt resizes from center. Cmd/Ctrl-click edits points.",
-  direct: "Select anchors or segments; Shift adds to selection. Drag empty space to select points. Double-click to isolate the whole path.",
+  select: "Cmd/Ctrl-drag a box to select anchors, then Connect two points. Shift adds to selection. Drag handles to resize paths.",
+  direct: "Shift-click two anchors or drag a selection box, then Connect. Drag points to reshape; double-click isolates the path.",
   pen: "Click for corners; drag for curves. Click an open endpoint to continue. First anchor closes; Enter finishes. + / − edits anchors.",
   rectangle: "Drag to draw a rectangle. Hold Shift for a square.",
   ellipse: "Drag to draw an ellipse. Hold Shift for a circle.",
@@ -118,6 +118,7 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
 
   const active = doc?.shapes.find((shape) => selected.includes(shape.id));
   const style = active || defaults;
+  const connection = useMemo(() => renderScope && doc && anchorSelection.length === 2 ? anchorConnectionState(renderScope, doc.shapes, anchorSelection) : null, [renderScope, doc, anchorSelection]);
   const unit = Math.max(view.width / Math.max(canvasSize.width, 1), view.height / Math.max(canvasSize.height, 1));
   const anchorRadius = unit * 4;
   const isDirty = !!doc && JSON.stringify(doc) !== initialDoc;
@@ -175,31 +176,32 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
       commit({ ...current, shapes }); setSelected([result.id]); setAnchorSelection([]); setError(""); setMessage(`${result.name} created. Undo is always available.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "The paths could not be combined."); }
   };
-  const pathCommand = (command: "divide" | "compound" | "release" | "reverse" | "join") => {
+  const pathCommand = (command: "divide" | "compound" | "release" | "reverse") => {
     const current = docRef.current, lib = scope.current; if (!current || !lib) return;
     try {
       const chosen = current.shapes.filter((shape) => selected.includes(shape.id));
       let results: VectorShape[];
-      let replaced = selected;
+      const replaced = selected;
       if (command === "divide") results = divideShapes(lib, chosen);
       else if (command === "compound") results = [makeCompoundShape(lib, chosen)];
       else if (command === "release") results = chosen.flatMap((shape) => releaseCompoundShape(lib, shape));
-      else if (command === "reverse") results = chosen.map((shape) => reverseShape(lib, shape));
-      else {
-        if (anchorSelection.length !== 2) return;
-        const [first, second] = anchorSelection;
-        const firstShape = current.shapes.find((shape) => shape.id === first.id), secondShape = current.shapes.find((shape) => shape.id === second.id);
-        if (!firstShape || !secondShape) return;
-        results = [joinShapeEndpoints(lib, firstShape, first, secondShape, second)]; replaced = [...new Set([first.id, second.id])];
-      }
+      else results = chosen.map((shape) => reverseShape(lib, shape));
       const last = Math.max(...current.shapes.map((shape, index) => replaced.includes(shape.id) ? index : -1));
       const nextShapes = command === "reverse" ? current.shapes.map((shape) => selected.includes(shape.id) ? results.find((result) => result.id === shape.id)! : shape)
         : command === "release" ? current.shapes.flatMap((shape) => selected.includes(shape.id) ? releaseCompoundShape(lib, shape) : [shape])
         : current.shapes.flatMap((shape, index) => index === last ? results : replaced.includes(shape.id) ? [] : [shape]);
       if (command === "release") results = nextShapes.filter((shape) => !current.shapes.some((original) => original.id === shape.id && !selected.includes(original.id)));
       commit({ ...current, shapes: nextShapes });
-      setSelected(results.map((shape) => shape.id)); setAnchorSelection([]); setIsolation(null); setError(""); setMessage({ divide: "Overlaps divided into separate editable regions.", compound: "Compound path created. Overlapping areas become cutouts.", release: "Contours released as separate paths.", reverse: "Path direction reversed.", join: "Selected endpoints joined." }[command]);
+      setSelected(results.map((shape) => shape.id)); setAnchorSelection([]); setIsolation(null); setError(""); setMessage({ divide: "Overlaps divided into separate editable regions.", compound: "Compound path created. Overlapping areas become cutouts.", release: "Contours released as separate paths.", reverse: "Path direction reversed." }[command]);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "This path operation could not be completed."); }
+  };
+  const connectSelection = () => {
+    const current = docRef.current, lib = scope.current; if (!current || !lib) return;
+    try {
+      const result = connectAnchors(lib, current, anchorSelection, defaults);
+      commit(result.document); setSelected(result.selectedIds); setAnchorSelection([]); setIsolation(null); setPenId(null); setError("");
+      setMessage(result.kind === "join" ? "Open endpoints connected into one path. Undo is available." : result.kind === "close" ? "Contour closed between the selected anchors. Undo is available." : "Connecting line added. Original paths and their styles are preserved.");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "These anchors could not be connected."); }
   };
   const reorder = (direction: "front" | "back") => {
     const current = docRef.current; if (!current) return;
@@ -295,7 +297,11 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
         const near = handle ? { contour: Number(target.dataset.contour), index: Number(target.dataset.index) } : nearestAnchor(lib, shape, point, unit * 10);
         const curve = !near ? nearestCurve(lib, shape, point, unit * 14) : null;
         const entries = near ? [{ id: shape.id, contour: near.contour, index: near.index }] : curve ? curveAnchorRefs(lib, shape, curve).map((a) => ({ ...a, id: shape.id })) : [];
-        if (!entries.length) { setSelected([shape.id]); setAnchorSelection([]); return; }
+        if (!near && ((event.metaKey || event.ctrlKey) || !entries.length)) {
+          if (!event.shiftKey) { setSelected([]); setAnchorSelection([]); }
+          drag.current = { ...base, kind: "marquee", additive: event.shiftKey, direct: true, ids: event.shiftKey ? selected : [], anchors: event.shiftKey ? anchorSelection : [], clickAnchors: entries, clickShapeId: shape.id };
+          setMarquee({ x: point.x, y: point.y, width: 0, height: 0 }); return;
+        }
         if (event.shiftKey && entries.length === 1 && anchorSelection.some((a) => sameAnchor(a, entries[0]))) {
           const next = anchorSelection.filter((a) => !sameAnchor(a, entries[0])); setAnchorSelection(next); return;
         }
@@ -371,7 +377,14 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
   const pointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
     const interaction = drag.current; drag.current = null; setMarquee(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (!interaction || interaction.kind === "pan" || interaction.kind === "marquee" || !docRef.current) return;
+    if (!interaction || interaction.kind === "pan" || !docRef.current) return;
+    if (interaction.kind === "marquee") {
+      if (Math.hypot(event.clientX - interaction.clientX, event.clientY - interaction.clientY) < 3) {
+        if (interaction.clickAnchors?.length) selectAnchors(interaction.clickAnchors, interaction.additive);
+        else if (interaction.clickShapeId && !interaction.additive) { setSelected([interaction.clickShapeId]); setAnchorSelection([]); }
+      }
+      return;
+    }
     if (interaction.kind === "shape" && Math.hypot(event.clientX - interaction.clientX, event.clientY - interaction.clientY) < 3) { setDocument(interaction.before); setSelected([]); return; }
     commit(docRef.current, interaction.before);
   };
@@ -419,6 +432,7 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
       if (modifier && event.key.toLowerCase() === "z") { event.preventDefault(); if (event.shiftKey) redo(); else undo(); return; }
       if (modifier && event.key.toLowerCase() === "a") { event.preventDefault(); const shapes = (docRef.current?.shapes || []).filter((s) => !isolation || s.id === isolation.id); if (tool === "direct" && scope.current) selectAnchors(shapes.flatMap((s) => shapeAnchors(scope.current!, s).map((a) => ({ id: s.id, contour: a.contour, index: a.index })))); else setSelected(shapes.map((s) => s.id)); return; }
       if (modifier && event.key.toLowerCase() === "d") { event.preventDefault(); duplicate(); return; }
+      if (modifier && event.key.toLowerCase() === "j") { event.preventDefault(); connectSelection(); return; }
       if (modifier && event.key.toLowerCase() === "s") { event.preventDefault(); if (docRef.current) onSave(exportVectorSvg(docRef.current, scope.current!)); return; }
       if (modifier) return;
       if (event.key === "Enter" && target.closest('button, [role="button"], a[href]')) return;
@@ -475,6 +489,7 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
       <div className="ve-commandbar">
         <div className="ve-command-group"><button title="Undo (⌘Z)" aria-label="Undo" disabled={!historyStatus.undo} onClick={undo}><Undo2 size={17} /></button><button title="Redo (⌘⇧Z)" aria-label="Redo" disabled={!historyStatus.redo} onClick={redo}><Redo2 size={17} /></button></div>
         <span className="ve-divider" />
+        {connection && <div className="ve-command-group ve-connect-control"><button className="ve-connect-button" disabled={!connection.allowed} aria-describedby="ve-connect-state" title={`${connection.reason} (Cmd/Ctrl+J)`} onClick={connectSelection}><Link2 size={17} /><span>Connect</span></button><span id="ve-connect-state" className="ve-connect-state" title={connection.reason}>{connection.allowed ? '2 anchors selected' : connection.reason}</span></div>}
         <div className="ve-command-group ve-boolean-tools" aria-label="Boolean operations">
           <button disabled={selected.length < 2} title="Unite selected closed shapes" onClick={() => boolean("unite")}><BooleanIcon type="unite" /><span>Unite</span></button>
           <button disabled={selected.length < 2} title="Subtract front shapes from the back shape" onClick={() => boolean("subtract")}><BooleanIcon type="subtract" /><span>Subtract</span></button>
@@ -542,14 +557,14 @@ export default function VectorEditor({ svg, name, standards, darkCanvas = false,
             <div className="ve-property-row"><label htmlFor="ve-join">Line join</label><StudioSelect id="ve-join" className="ve-style-select" label="Line join" size="sm" value={style.lineJoin} onValueChange={value=>updateStyle({ lineJoin: value as VectorShape["lineJoin"] })} options={[{'value': 'round', 'label': 'Round'}, {'value': 'miter', 'label': 'Miter'}, {'value': 'bevel', 'label': 'Bevel'}]}/></div>
             {active && <div className="ve-property-row"><label htmlFor="ve-opacity">Opacity</label><div className="ve-number"><input id="ve-opacity" type="number" min="0" max="100" step="5" value={Math.round(active.opacity * 100)} onChange={(e) => updateStyle({ opacity: Math.min(1, Math.max(0, Number(e.target.value) / 100)) })} /><span>%</span></div></div>}
           </section>
-          {anchorSelection.length > 0 && tool === "direct" && <section className="ve-property-section"><h3>{anchorSelection.length} anchor{anchorSelection.length > 1 ? "s" : ""} selected</h3><div className="ve-two-buttons"><button onClick={() => convertSelected("smooth")}>Make smooth</button><button onClick={() => convertSelected("corner")}>Make corner</button></div><button className="ve-text-button" onClick={deleteSelection}><Minus size={13} /> Remove selected anchors</button><button className="ve-text-button" disabled={anchorSelection.length !== 2} onClick={() => pathCommand("join")}><PenTool size={13} /> Join selected endpoints</button><button className="ve-text-button" disabled={anchorSelection.length !== 1} onClick={splitAtSelection}><Scissors size={13} /> Cut at selected anchor</button><p className="ve-small-note">Drag a handle to keep both sides linked. Alt-drag adjusts one handle independently.</p></section>}
+          {anchorSelection.length > 0 && tool === "direct" && <section className="ve-property-section"><h3>{anchorSelection.length} anchor{anchorSelection.length > 1 ? "s" : ""} selected</h3><button className="ve-full-button ve-connect-button" disabled={!connection?.allowed} title={connection?.reason || 'Select exactly two anchors'} onClick={connectSelection}><Link2 size={15} />Connect anchors<kbd>⌘/Ctrl J</kbd></button><p className="ve-small-note ve-connect-hint">{connection?.reason || 'Shift-click two anchors or Cmd/Ctrl-drag a selection box.'}</p><div className="ve-two-buttons"><button onClick={() => convertSelected("smooth")}>Make smooth</button><button onClick={() => convertSelected("corner")}>Make corner</button></div><button className="ve-text-button" onClick={deleteSelection}><Minus size={13} /> Remove selected anchors</button><button className="ve-text-button" disabled={anchorSelection.length !== 1} onClick={splitAtSelection}><Scissors size={13} /> Cut at selected anchor</button><p className="ve-small-note">Drag a handle to keep both sides linked. Alt-drag adjusts one handle independently.</p></section>}
           {penId && <section className="ve-property-section"><h3>Drawing a path</h3><button className="ve-full-button" onClick={finishPen}><CornerDownLeft size={15} /> Finish open path <kbd>↵</kbd></button></section>}
           {selected.length > 0 && <section className="ve-property-section"><h3>Path actions</h3><div className="ve-two-buttons"><button onClick={() => reorder("front")}><ArrowUp size={13} /> To front</button><button onClick={() => reorder("back")}><ArrowDown size={13} /> To back</button></div><button className="ve-text-button" onClick={() => { alterSelected((shape) => closeShape(scope.current!, shape)); setMessage("Selected paths closed. They can now be used in Boolean operations."); }}><PenTool size={13} /> Close selected paths</button><div className="ve-path-actions"><button disabled={selected.length < 2} onClick={() => pathCommand("compound")}>Make compound</button><button onClick={() => pathCommand("release")}>Release compound</button><button onClick={() => pathCommand("reverse")}>Reverse direction</button></div><p className="ve-small-note">Subtract cuts front shapes out of the back shape. Layers at the top are in front.</p></section>}
           <section className="ve-property-section ve-layer-section"><h3><Layers size={14} /> Layers <span>{doc?.shapes.length || 0}</span></h3><div className="ve-layer-list">{doc?.shapes.toReversed().map((shape, index) => <button key={shape.id} className={`ve-layer ${selected.includes(shape.id) ? "selected" : ""}`} disabled={!!isolation && isolation.id !== shape.id} onClick={(event) => { setSelected((previous) => event.shiftKey ? previous.includes(shape.id) ? previous.filter((id) => id !== shape.id) : [...previous, shape.id] : [shape.id]); setAnchorSelection([]); }}><svg viewBox={`0 0 ${doc.width} ${doc.height}`} aria-hidden="true"><path d={renderedPaths.get(shape.id) || shape.d} fill={shape.fill} stroke={shape.stroke} strokeWidth={shape.strokeWidth} strokeLinecap={shape.lineCap} strokeLinejoin={shape.lineJoin} /></svg><span>{shape.name}</span><small>{index === 0 ? "Front" : ""}</small></button>)}</div><p className="ve-small-note">Shift-click to select multiple shapes.</p></section>
         </aside>
       </div>
       <footer className="ve-status"><span><span className="ve-status-dot" />{toolList.find((item) => item.id === tool)?.title}</span><p>{hints[tool]}</p>{onToggleDarkCanvas&&<PreviewBackgroundToggle dark={darkCanvas} onToggle={onToggleDarkCanvas}/>}<button className="ve-shortcuts-button" onClick={() => setShortcutsOpen(!shortcutsOpen)} aria-expanded={shortcutsOpen}>Shortcuts ?</button></footer>
-      {shortcutsOpen && <div className="ve-shortcuts"><div><strong>Editing shortcuts</strong><button aria-label="Close shortcuts" onClick={() => setShortcutsOpen(false)}><X size={15} /></button></div><dl><dt>V / A</dt><dd>Select paths / select anchors</dd><dt>Cmd / Ctrl-click</dt><dd>Select a point or segment</dd><dt>Shift-click / drag</dt><dd>Add points or paths / marquee selection</dd><dt>Double-click</dt><dd>Isolate the whole path; Enter or Escape exits</dd><dt>P / + / − / C</dt><dd>Pen / add point / remove point / convert</dd><dt>Shift / Alt</dt><dd>Constrain movement / independent curve handle</dd><dt>Space + drag</dt><dd>Pan the canvas</dd><dt>Cmd / Ctrl Z</dt><dd>Undo; add Shift to redo</dd><dt>Cmd / Ctrl D</dt><dd>Duplicate selected paths</dd><dt>Arrows / Shift</dt><dd>Nudge 0.25 px / 1 px</dd></dl></div>}
+      {shortcutsOpen && <div className="ve-shortcuts"><div><strong>Editing shortcuts</strong><button aria-label="Close shortcuts" onClick={() => setShortcutsOpen(false)}><X size={15} /></button></div><dl><dt>V / A</dt><dd>Select paths / select anchors</dd><dt>Cmd / Ctrl-drag</dt><dd>Draw a box to select anchors, even over filled shapes</dd><dt>Cmd / Ctrl-click</dt><dd>Select a point or segment</dd><dt>Cmd / Ctrl J</dt><dd>Connect two selected anchors</dd><dt>Shift-click / drag</dt><dd>Add points or paths / marquee selection</dd><dt>Double-click</dt><dd>Isolate the whole path; Enter or Escape exits</dd><dt>P / + / − / C</dt><dd>Pen / add point / remove point / convert</dd><dt>Shift / Alt</dt><dd>Constrain movement / independent curve handle</dd><dt>Space + drag</dt><dd>Pan the canvas</dd><dt>Cmd / Ctrl Z</dt><dd>Undo; add Shift to redo</dd><dt>Cmd / Ctrl D</dt><dd>Duplicate selected paths</dd><dt>Arrows / Shift</dt><dd>Nudge 0.25 px / 1 px</dd></dl></div>}
       {discardPrompt && <div className="ve-discard-overlay"><div className="ve-discard" role="alertdialog" aria-labelledby="ve-discard-title"><h3 id="ve-discard-title">Keep your changes?</h3><p>You have unsaved vector edits. Save them to this exploration or discard them.</p><div><button onClick={() => setDiscardPrompt(false)}>Keep editing</button><button className="ve-discard-button" onClick={onClose}>Discard</button><button className="ve-save" onClick={() => { if (doc) onSave(exportVectorSvg(doc, scope.current!)); }}>Save changes</button></div></div></div>}
     </div>
   </div>;

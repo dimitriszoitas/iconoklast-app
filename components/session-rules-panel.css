@@ -51,4 +51,28 @@
 @keyframes session-rules-spin{to{transform:rotate(360deg)}}
 @container(max-width:650px){.session-rule-proposal{align-items:stretch;flex-direction:column;gap:10px}.session-rule-proposal-actions{justify-content:flex-end}}
 @container(max-width:380px){.session-rules-toggle{gap:6px}.session-rules-toggle-label{font-size:11px}.session-rules-add-row{flex-wrap:wrap}.session-rules-add-row input{flex-basis:100%}.session-rules-add-row>.session-rules-button{margin-left:auto}.session-rules-error{align-items:flex-start;flex-direction:column}.session-rules-list>li{gap:5px;padding-left:8px}.session-rules-panel .session-rules-icon-button{width:28px}.session-rules-proposals-heading{flex-wrap:wrap}}
+.session-rules-panel--sidebar{width:100%;min-width:0;margin:0;padding:11px 12px;box-sizing:border-box;border-radius:9px}
+.session-rules-panel--sidebar .session-rules-toggle{gap:6px;min-width:0}
+.session-rules-panel--sidebar .session-rules-toggle>svg{flex-shrink:0}
+.session-rules-panel--sidebar .session-rules-toggle>svg:last-child{margin-left:auto}
+.session-rules-panel--sidebar .session-rules-toggle strong{min-width:0;font-size:12px;overflow-wrap:anywhere}
+.session-rules-panel--sidebar .session-rules-count{flex-shrink:0;min-width:18px;height:18px;padding:0 4px;font-size:10px}
+.session-rules-panel--sidebar .session-rules-description{font-size:11px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere}
+.session-rules-panel--sidebar .session-rules-editor{margin-top:10px;padding-top:10px}
+.session-rules-panel--sidebar .session-rules-list>li{flex-wrap:wrap;gap:3px 6px;padding:7px 8px}
+.session-rules-panel--sidebar .session-rule-text{flex-basis:100%;padding-top:0;line-height:1.6}
+.session-rules-panel--sidebar .session-rule-tools{margin-left:auto}
+.session-rules-panel--sidebar .session-rules-add-row{align-items:stretch;flex-direction:column;gap:7px}
+.session-rules-panel--sidebar .session-rules-add-row input{flex:auto;height:36px;font-size:12px}
+.session-rules-panel--sidebar .session-rules-add-row>.session-rules-button{align-self:flex-end;margin-left:0}
+.session-rules-panel--sidebar .session-rule-proposal{align-items:stretch;flex-direction:column;gap:9px;padding:9px}
+.session-rules-panel--sidebar .session-rule-proposal-actions{justify-content:flex-end;flex-wrap:wrap}
+.session-rules-panel--sidebar .session-rules-proposals-heading{flex-wrap:wrap;gap:4px 6px}
+.session-rules-panel--sidebar .session-rules-proposals-heading>span{margin-left:20px;flex-basis:100%}
+.session-rules-panel--sidebar .session-rules-feedback{align-items:flex-start;gap:7px;font-size:11px}
+.session-rules-panel--sidebar .session-rules-feedback>div{gap:4px}
+.session-rules-panel--sidebar :is(.session-rules-status,.session-rules-error){font-size:11px;line-height:1.5}
+.session-rules-panel--sidebar .session-rules-error{align-items:flex-start;flex-direction:column}
+.session-rules-panel--sidebar .session-rules-connect{align-items:flex-start;gap:7px}
+.session-rules-panel--sidebar :is(.session-rules-button,.session-rules-verdicts){max-width:100%;white-space:normal;overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){.session-rules-spinner{animation:none}}

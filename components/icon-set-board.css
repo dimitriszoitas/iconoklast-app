@@ -4,8 +4,24 @@
 
 
 /* Keep comparison rows focused on the artwork and one reversible decision. */
-.isb-rules { padding: 12px 15px 0; }
-.isb-rules > * { margin: 0; }
+.isb-board { --isb-row-gutter: 16px; --isb-column-gap: 13px; }
+.isb-row-subhead { padding-inline: var(--isb-row-gutter); gap: var(--isb-column-gap); }
+.isb-row-subhead > div { padding-right: 0; }
+.isb-paired-help { padding-inline: var(--isb-row-gutter); }
+.isb-strip {
+  box-sizing: border-box;
+  padding-inline: var(--isb-row-gutter);
+  gap: var(--isb-column-gap);
+  scroll-padding-left: calc(var(--isb-row-gutter) + var(--isb-original-width) + var(--isb-column-gap));
+  scroll-padding-right: var(--isb-row-gutter);
+}
+.isb-original { left: 0; border-left: 1px solid #dce4ea; border-radius: 7px; }
+.isb-provenance-note { margin-left: calc(var(--isb-row-gutter) + var(--isb-original-width) + var(--isb-column-gap)); margin-right: var(--isb-row-gutter); }
+.isb-rejected-toggle { margin-left: auto; padding: 4px 8px; border: 1px solid #c6d2df; border-radius: 5px; background: #ffffff80; color: #526579; font-size: 11px; line-height: 1.5; white-space: nowrap; }
+.isb-rejected-toggle:hover { background: #fff; }
+.isb-rejected-toggle:focus-visible { outline: 2px solid #647da5; outline-offset: 2px; }
+.isb-rejected-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 13px; }
+.isb-rejected-actions button { margin-top: 0; }
 .isb-candidate { min-height: 0; }
 .isb-card-top { min-height: 32px; padding: 7px 10px; }
 .isb-candidate-preview { height: 104px; min-height: 104px; padding: 16px 12px; cursor: zoom-in; }
@@ -29,8 +45,12 @@
 .app-shell .isb-board .isb-candidate-actions .decision-reject.is-active { background: #f7e8ed; color: #8a3b50; }
 .app-shell .isb-board .isb-candidate-actions .decision-accept.is-active { background: #dceee1; color: #1a6e32; }
 .app-shell .isb-board .isb-candidate-actions .is-active { font-weight: 650; }
+@media (max-width: 1100px) {
+  .isb-board { --isb-row-gutter: 12px; }
+}
 @media (max-width: 600px) {
-  .isb-rules { padding: 10px 10px 0; }
+  .isb-board { --isb-row-gutter: 10px; --isb-column-gap: 10px; }
+  .isb-provenance-note { margin-left: var(--isb-row-gutter); }
   .isb-card-top { padding-inline: 9px; }
   .isb-candidate-caption { padding-inline: 10px; }
   .isb-original { min-height: 0; padding-top: 20px; }

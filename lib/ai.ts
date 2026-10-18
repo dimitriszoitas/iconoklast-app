@@ -2,6 +2,7 @@ import { describeConstructionGrid } from "./construction-grid.ts";
 import { resolveArtworkFit } from "./artwork-fit.ts";
 import { getPalette, type PaletteColor } from "./color-palette.ts";
 import { MAX_SESSION_RULES, MAX_RULE_LENGTH, MAX_RULE_FEEDBACK, MAX_RULE_SUGGESTIONS, MAX_DISMISSED_RULES, ruleTextKey, type RuleFeedback } from "./session-rules.ts";
+import { isApiKeyLike, normalizeModelSelection } from "./model-selection.ts";
 
 /** Server-side validation and OpenAI adapter. This module never persists credentials. */
 export const DEFAULT_AI_MODEL = "gpt-6.1-sol";
@@ -98,7 +99,14 @@ function ruleList(value: unknown, name: string, max = MAX_SESSION_RULES): string
 }
 
 export function isValidModel(value: string): boolean {
-  return /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/.test(value);
+  return !!value && normalizeModelSelection(value) === value;
+}
+
+function parseModel(value: unknown): string {
+  if (isApiKeyLike(value)) throw new AIError("That looks like an API key. Enter it in the API key field, then choose a model.", 400, "api_key_in_model");
+  const model = textField(value, "Model", 100, 1);
+  if (!isValidModel(model)) throw new AIError("Enter a valid OpenAI model name.");
+  return model;
 }
 
 export function parseConnectionInput(value: unknown): AIConnectionInput {
@@ -110,8 +118,7 @@ export function parseConnectionInput(value: unknown): AIConnectionInput {
   }
   let model: string | undefined;
   if (value.model !== undefined && value.model !== "") {
-    model = textField(value.model, "Model", 100, 1);
-    if (!isValidModel(model)) throw new AIError("Enter a valid OpenAI model name.");
+    model = parseModel(value.model);
   }
   return { apiKey, model };
 }
@@ -265,8 +272,7 @@ export function parseGenerationInput(value: unknown): GenerationInput {
   }
   let model: string | undefined;
   if (value.model !== undefined && value.model !== "") {
-    model = textField(value.model, "Model", 100, 1);
-    if (!isValidModel(model)) throw new AIError("Enter a valid OpenAI model name.");
+    model = parseModel(value.model);
   }
   return { brief, standards, count, mode, creativity, references, referenceImages, feedback, rules: ruleList(value.rules, "Session rules"), apiKey, model };
 }

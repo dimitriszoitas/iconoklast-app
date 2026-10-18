@@ -48,5 +48,7 @@ export type IconItem = {
   candidates: Candidate[];
   round: number;
   standards?: Standards;
+  /** Uploaded icons in the same set share one session and its approved rules. */
+  sessionId?: string;
   sessionRules?: SessionRules;
 };

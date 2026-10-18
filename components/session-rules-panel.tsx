@@ -15,6 +15,8 @@ export type SessionRulesPanelProps = {
   onConnect: () => void;
   onRetry: () => void;
   label?: string;
+  placement?: 'workspace' | 'sidebar';
+  description?: string;
 };
 
 const normalized = ruleTextKey;
@@ -46,7 +48,7 @@ function RuleProposal({ suggestion, disabled, atLimit, existingTexts, onApprove,
   </div>;
 }
 
-export default function SessionRulesPanel({ value, onChange, disabled = false, learning = false, error, aiEnabled, onConnect, onRetry, label = 'Session rules' }: SessionRulesPanelProps) {
+export default function SessionRulesPanel({ value, onChange, disabled = false, learning = false, error, aiEnabled, onConnect, onRetry, label = 'Session rules', placement = 'workspace', description = 'Applies to this session. Suggestions need your approval.' }: SessionRulesPanelProps) {
   const panelId = useId();
   const [expanded, setExpanded] = useState(value.rules.length > 0);
   const [draft, setDraft] = useState('');
@@ -68,7 +70,7 @@ export default function SessionRulesPanel({ value, onChange, disabled = false, l
 
   function saveRule() {
     const text = editingText.trim();
-    if (disabled || !normalized(text) || text.length > MAX_RULE_LENGTH || editDuplicate) return;
+    if (disabled || !value.rules.some(rule => rule.id === editingId) || !normalized(text) || text.length > MAX_RULE_LENGTH || editDuplicate) return;
     onChange({ ...value, rules: value.rules.map(rule => rule.id === editingId ? { ...rule, text } : rule) });
     setEditingId(null);
   }
@@ -86,15 +88,15 @@ export default function SessionRulesPanel({ value, onChange, disabled = false, l
     onChange({ ...value, suggestions: value.suggestions.filter(item => item.id !== suggestion.id), dismissedRules });
   }
 
-  return <section className="session-rules-panel" aria-label={label}>
+  return <section className={`session-rules-panel session-rules-panel--${placement}`} aria-label={label}>
     <button type="button" className="session-rules-toggle" aria-expanded={expanded} aria-controls={`${panelId}-rules`} onClick={() => setExpanded(!expanded)}>
       <ListChecks size={16} />
       <strong>{label}</strong>
       <span className="session-rules-count" aria-label={`${value.rules.length} active rules`}>{value.rules.length}</span>
-      <span className="session-rules-toggle-label">{expanded ? 'Hide rules' : value.rules.length ? 'Manage rules' : 'Add rules'}</span>
+      {placement !== 'sidebar' && <span className="session-rules-toggle-label">{expanded ? 'Hide rules' : value.rules.length ? 'Manage rules' : 'Add rules'}</span>}
       {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
     </button>
-    <p className="session-rules-description">Applies to this session. Suggestions need your approval.</p>
+    <p className="session-rules-description">{description}</p>
 
     <div id={`${panelId}-rules`} className="session-rules-editor" hidden={!expanded}>
       {value.rules.length > 0 && <ul className="session-rules-list">
