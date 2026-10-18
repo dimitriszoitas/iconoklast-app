@@ -3,6 +3,7 @@ import { vectorJunctionCaps } from "../lib/vector-junction-caps";
 
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import StudioSelect from './studio-select';
+import PreviewBackgroundToggle from './preview-background-toggle';
 import type paper from "paper";
 import type { Standards } from "../lib/icon-types";
 import { GuideShapes } from "./construction-guide";
@@ -41,7 +42,7 @@ const hints: Record<ToolName, string> = {
 };
 const colorInput = (value: string) => /^#[0-9a-f]{6}$/i.test(value) ? value : /^#[0-9a-f]{3}$/i.test(value) ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}` : "#231c2a";
 
-export default function VectorEditor({ svg, name, standards, onSave, onClose }: { svg: string; name: string; standards?: Standards; onSave: (svg: string) => void; onClose: () => void }) {
+export default function VectorEditor({ svg, name, standards, darkCanvas = false, onToggleDarkCanvas, onSave, onClose }: { svg: string; name: string; standards?: Standards; darkCanvas?: boolean; onToggleDarkCanvas?: () => void; onSave: (svg: string) => void; onClose: () => void }) {
   const [doc, setDoc] = useState<VectorDocument | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [tool, setTool] = useState<ToolName>("select");
@@ -491,12 +492,12 @@ export default function VectorEditor({ svg, name, standards, onSave, onClose }: 
       </div>
       <div className="ve-workspace">
         <nav className="ve-tools" aria-label="Drawing tools">{toolList.map(({ id, title, key, Icon }, index) => <div key={id}>{(index === 2 || id === "rectangle" || id === "hand") && <div className="ve-tool-rule" />}<button className={tool === id ? "active" : ""} title={`${title} (${key})`} aria-label={`${title} (${key})`} aria-pressed={tool === id} onClick={() => changeTool(id)}><Icon size={19} /><span>{key}</span></button></div>)}</nav>
-        <div className={`ve-canvas-wrap ve-tool-${spaceDown ? "hand" : tool}`}>
+        <div className={`ve-canvas-wrap ve-tool-${spaceDown ? "hand" : tool} ${darkCanvas ? "dark-previews" : ""}`}>
           <div className="ve-artboard-label">{name} <span>{doc?.width || 24} × {doc?.height || 24} units</span><span title="One SVG unit equals one pixel at the exported artboard size">1 square = 1 unit</span></div>
           {isolation && <div className="ve-isolation-bar"><span>Isolated path</span><button onClick={exitIsolation} title="Return to the full icon (Enter or Esc)"><X size={14} /> Exit <kbd>Enter</kbd></button></div>}
           {doc && <svg ref={svgRef} className="ve-canvas" aria-label="Editable vector artboard" role="img" viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={(e) => { if (drag.current?.before) setDocument(drag.current.before); drag.current = null; setMarquee(null); if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }} onDoubleClick={doubleClick}>
-            <defs><pattern id="ve-grid" width={1} height={1} patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" fill="none" stroke="#e8e4ed" strokeWidth={unit * .65} /></pattern></defs>
-            <rect x={0} y={0} width={doc.width} height={doc.height} fill="white" stroke="#e0dbe5" strokeWidth={unit} />
+            <defs><pattern id="ve-grid" width={1} height={1} patternUnits="userSpaceOnUse"><path d="M 1 0 L 0 0 0 1" fill="none" stroke={darkCanvas ? "#ffffff28" : "#e8e4ed"} strokeWidth={unit * .65} /></pattern></defs>
+            <rect x={0} y={0} width={doc.width} height={doc.height} fill={darkCanvas ? "#283748" : "white"} stroke={darkCanvas ? "#71839a" : "#e0dbe5"} strokeWidth={unit} />
             {grid && <rect x={0} y={0} width={doc.width} height={doc.height} fill="url(#ve-grid)" pointerEvents="none" />}
             {showGuides && constructionGrid !== 'none' && <GuideShapes grid={constructionGrid} canvas={{ x: 0, y: 0, width: doc.width, height: doc.height }} strokeWidth={unit * 1.1} showGrid={false} />}
             {doc.shapes.map((shape) => <g key={shape.id} opacity={isolation && isolation.id !== shape.id ? .18 : 1} pointerEvents={isolation && isolation.id !== shape.id ? "none" : undefined}><path data-shape={shape.id} d={renderedPaths.get(shape.id) || shape.d} fill={shape.fill} stroke={shape.stroke} strokeWidth={shape.strokeWidth} strokeLinecap={shape.lineCap} strokeLinejoin={shape.lineJoin} fillRule={shape.fillRule} opacity={shape.opacity} strokeDasharray={shape.dashArray} strokeDashoffset={shape.dashOffset} strokeMiterlimit={shape.miterLimit} />
@@ -547,7 +548,7 @@ export default function VectorEditor({ svg, name, standards, onSave, onClose }: 
           <section className="ve-property-section ve-layer-section"><h3><Layers size={14} /> Layers <span>{doc?.shapes.length || 0}</span></h3><div className="ve-layer-list">{doc?.shapes.toReversed().map((shape, index) => <button key={shape.id} className={`ve-layer ${selected.includes(shape.id) ? "selected" : ""}`} disabled={!!isolation && isolation.id !== shape.id} onClick={(event) => { setSelected((previous) => event.shiftKey ? previous.includes(shape.id) ? previous.filter((id) => id !== shape.id) : [...previous, shape.id] : [shape.id]); setAnchorSelection([]); }}><svg viewBox={`0 0 ${doc.width} ${doc.height}`} aria-hidden="true"><path d={renderedPaths.get(shape.id) || shape.d} fill={shape.fill} stroke={shape.stroke} strokeWidth={shape.strokeWidth} strokeLinecap={shape.lineCap} strokeLinejoin={shape.lineJoin} /></svg><span>{shape.name}</span><small>{index === 0 ? "Front" : ""}</small></button>)}</div><p className="ve-small-note">Shift-click to select multiple shapes.</p></section>
         </aside>
       </div>
-      <footer className="ve-status"><span><span className="ve-status-dot" />{toolList.find((item) => item.id === tool)?.title}</span><p>{hints[tool]}</p><button className="ve-shortcuts-button" onClick={() => setShortcutsOpen(!shortcutsOpen)} aria-expanded={shortcutsOpen}>Shortcuts ?</button></footer>
+      <footer className="ve-status"><span><span className="ve-status-dot" />{toolList.find((item) => item.id === tool)?.title}</span><p>{hints[tool]}</p>{onToggleDarkCanvas&&<PreviewBackgroundToggle dark={darkCanvas} onToggle={onToggleDarkCanvas}/>}<button className="ve-shortcuts-button" onClick={() => setShortcutsOpen(!shortcutsOpen)} aria-expanded={shortcutsOpen}>Shortcuts ?</button></footer>
       {shortcutsOpen && <div className="ve-shortcuts"><div><strong>Editing shortcuts</strong><button aria-label="Close shortcuts" onClick={() => setShortcutsOpen(false)}><X size={15} /></button></div><dl><dt>V / A</dt><dd>Select paths / select anchors</dd><dt>Cmd / Ctrl-click</dt><dd>Select a point or segment</dd><dt>Shift-click / drag</dt><dd>Add points or paths / marquee selection</dd><dt>Double-click</dt><dd>Isolate the whole path; Enter or Escape exits</dd><dt>P / + / − / C</dt><dd>Pen / add point / remove point / convert</dd><dt>Shift / Alt</dt><dd>Constrain movement / independent curve handle</dd><dt>Space + drag</dt><dd>Pan the canvas</dd><dt>Cmd / Ctrl Z</dt><dd>Undo; add Shift to redo</dd><dt>Cmd / Ctrl D</dt><dd>Duplicate selected paths</dd><dt>Arrows / Shift</dt><dd>Nudge 0.25 px / 1 px</dd></dl></div>}
       {discardPrompt && <div className="ve-discard-overlay"><div className="ve-discard" role="alertdialog" aria-labelledby="ve-discard-title"><h3 id="ve-discard-title">Keep your changes?</h3><p>You have unsaved vector edits. Save them to this exploration or discard them.</p><div><button onClick={() => setDiscardPrompt(false)}>Keep editing</button><button className="ve-discard-button" onClick={onClose}>Discard</button><button className="ve-save" onClick={() => { if (doc) onSave(exportVectorSvg(doc, scope.current!)); }}>Save changes</button></div></div></div>}
     </div>

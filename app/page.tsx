@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, FolderOpen, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, Moon, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Upload, WandSparkles, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowLeft, ArrowRight, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Copy, Download, FileCode2, FolderOpen, Grid2X2, Heart, History, KeyRound, Layers2, LoaderCircle, Maximize2, PanelLeftClose, PanelLeftOpen, Plus, PenTool, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, WandSparkles, X } from 'lucide-react';
 import { DEFAULT_STANDARDS, createDemoCandidates, createSampleSet, sanitizeSvg, recolorSvg, updateSvgStrokeWidth, analyzeSvg, exportSvg, exportSet } from '@/lib/icon-engine';
 import type { Candidate, IconItem, Standards } from '@/lib/icon-types';
 import { directionCount, directionLetter, versionLabel, candidateFileName } from '@/lib/candidate-versions';
@@ -14,6 +14,8 @@ import '@/components/workspace-mode.css';
 import '@/components/sidebar-collapse.css';
 import '@/components/connection-settings.css';
 import IconSetBoard from '@/components/icon-set-board';
+import IconLibrary, { type IconLibraryFilter, type LibraryPreviewSize, LIBRARY_PREVIEW_SIZES } from '@/components/icon-library';
+import PreviewBackgroundToggle from '@/components/preview-background-toggle';
 import SetToolbar from '@/components/set-toolbar';
 import GenerationProgress from '@/components/generation-progress';
 import { renderReferenceImages } from '@/lib/render-reference';
@@ -87,17 +89,22 @@ export default function Home() {
   const [model, setModel] = useState('');
   const [useAI, setUseAI] = useState(false);
   const [darkCanvas, setDarkCanvas] = useState(false);
+  const [libraryPreviewSize, setLibraryPreviewSize] = useState<LibraryPreviewSize>(48);
+  const [libraryFilter, setLibraryFilter] = useState<IconLibraryFilter>('all');
+  const [libraryQuery, setLibraryQuery] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const [showConstructionGuides, setShowConstructionGuides] = useState(true);
   const [size, setSize] = useState(64);
   const [dragOver, setDragOver] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [isNew, setIsNew] = useState(false);
+  const [newBriefFocusRequest, setNewBriefFocusRequest] = useState(0);
   const [mobilePanel, setMobilePanel] = useState<'icons' | 'standards' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [presets, setPresets] = useState<{name:string;standards:Standards}[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const briefRef = useRef<HTMLTextAreaElement>(null);
+  const workspaceScrollRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const collapseSidebarRef = useRef<HTMLButtonElement>(null);
   const expandSidebarRef = useRef<HTMLButtonElement>(null);
@@ -134,11 +141,13 @@ export default function Home() {
           const restoredTab:Tab = ['studio','refactor','collection'].includes(data.tab) ? data.tab : uploads.length ? 'refactor' : 'studio';
           const draft = typeof data.newBrief==='string' ? data.newBrief.slice(0,2000) : '';
           const creating = restoredTab==='studio' && (data.isNew===true || !!focused?.originalSvg);
-          setItems(checked); setActiveId(focused?.id ?? ''); setNewBrief(draft); setIsNew(creating); setBrief(creating?draft:focused?.brief ?? '');
+          setItems(checked); setActiveId(creating?'':focused?.id ?? ''); setNewBrief(draft); setIsNew(creating); setBrief(creating?draft:focused?.brief ?? '');
           setTab(restoredTab);
           if(['faithful','exploratory','radical'].includes(data.creativity))setCreativity(data.creativity);
           if(Number.isInteger(data.count)&&data.count>=4&&data.count<=8)setCount(data.count);
           if(typeof data.showConstructionGuides==='boolean')setShowConstructionGuides(data.showConstructionGuides);
+          if(typeof data.darkCanvas==='boolean')setDarkCanvas(data.darkCanvas);
+          if(LIBRARY_PREVIEW_SIZES.includes(data.libraryPreviewSize))setLibraryPreviewSize(data.libraryPreviewSize);
           if(typeof data.sidebarCollapsed==='boolean')setSidebarCollapsed(data.sidebarCollapsed);
           if(typeof data.batchFeedback==='string')setBatchFeedback(data.batchFeedback.slice(0,1000));
           if(typeof data.model==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(data.model))setModel(data.model);
@@ -154,9 +163,9 @@ export default function Home() {
 
   useEffect(() => {
     if (!ready) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, newBrief, isNew, sidebarCollapsed })); }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ items, standards, name: setName, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed })); }
     catch { setError('Browser storage is full or unavailable. Export your work before closing this page.'); }
-  }, [items, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, newBrief, isNew, sidebarCollapsed]);
+  }, [items, standards, setName, ready, presets, activeId, tab, batchIds, creativity, count, batchFeedback, model, showConstructionGuides, darkCanvas, libraryPreviewSize, newBrief, isNew, sidebarCollapsed]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -166,6 +175,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => { setFitFeedback(null); }, [inspect?.id]);
+
+  useEffect(() => {
+    if(!newBriefFocusRequest || !isNew || tab!=='studio')return;
+    workspaceScrollRef.current?.scrollTo({top:0});
+    briefRef.current?.focus({preventScroll:true});
+  }, [newBriefFocusRequest, isNew, tab]);
 
   const audit = useMemo(() => {
     if(!active || !ready) return null;
@@ -255,12 +270,23 @@ export default function Home() {
     } finally {setBusy('');controller.current=null;}
   }
   const chooseIcon = (i: StudioItem) => { setActiveId(i.id); setBrief(i.brief); setIsNew(false); setFeedback(''); setError(''); setMobilePanel(null); setTab(i.originalSvg?'refactor':'studio'); };
-  const newIcon = () => { if(busy)return; setIsNew(true); setBrief(''); setNewBrief(''); setTab('studio'); setFeedback(''); setError(''); setMobilePanel(null); setTimeout(()=>briefRef.current?.focus(),50); };
+  const openNewIcon = (resetDraft = false) => {
+    if(busy)return;
+    setActiveId(''); setIsNew(true); setBrief(resetDraft?'':newBrief);
+    if(resetDraft)setNewBrief('');
+    setTab('studio'); setFeedback(''); setError(''); setMobilePanel(null);
+    setNewBriefFocusRequest(request=>request+1);
+  };
+  const newIcon = () => openNewIcon(true);
   const switchWorkspace = (next:'studio'|'refactor') => {
-    if(busy||tab===next)return;
+    if(busy)return;
+    if(next==='studio') { openNewIcon(); return; }
+    if(tab===next)return;
     setError(''); setFeedback(''); setMobilePanel(null);
-    if(next==='studio') { setIsNew(true); setBrief(newBrief); setTab('studio'); }
-    else { const target=active?.originalSvg?active:uploaded[0]; if(target)chooseIcon(target); setIsNew(false); setTab('refactor'); }
+    const target=active?.originalSvg?active:uploaded[0];
+    if(target)chooseIcon(target);
+    else { setActiveId(''); setBrief(''); }
+    setIsNew(false); setTab('refactor');
   };
   const changeBrief = (value:string) => { setBrief(value); if(isNew)setNewBrief(value); };
   const toggleSidebar = () => {
@@ -408,8 +434,8 @@ export default function Home() {
     const directionAlreadySelected=!!candidate.pairId&&shortlisted.some(c=>c.pairId===candidate.pairId);
     if(status==='shortlisted' && candidate.status!=='shortlisted' && !directionAlreadySelected && shortlistCount>=3) { notice('Choose up to 3 directions per icon.'); return; }
     setItems(old=>old.map(i=>i.id!==itemId?i:{...i,candidates:i.candidates.map(c=>c.id===id?{...c,status:c.status===status?'pending':status}:status==='accepted'&&c.status==='accepted'&&(!candidate.pairId||c.treatment===candidate.treatment||!c.pairId)?{...c,status:'pending'}:c)}));
-    chooseIcon(item);
-    if(status==='accepted' && candidate.status!=='accepted') notice(`${item.name}${candidate.treatment?' · '+versionLabel(candidate):''} added to your accepted collection.`);
+    if(tab!=='collection')chooseIcon(item);
+    if(status==='accepted' && candidate.status!=='accepted') notice(`${item.name}${candidate.treatment?' · '+versionLabel(candidate):''} added to your accepted icons.`);
   }
 
   async function upload(files:FileList|null) {
@@ -454,36 +480,44 @@ export default function Home() {
   }
 
   return <div className={`app-shell has-sidebar-brand ${acceptedSvgCount>0?'has-export-selection':''}`}>
-    <nav className="mobile-tools"><button aria-expanded={mobilePanel==='icons'} aria-controls="workspace-sidebar" onClick={()=>setMobilePanel(mobilePanel==='icons'?null:'icons')}><Layers2 size={16}/>Your icons</button><button onClick={()=>setMobilePanel(mobilePanel==='standards'?null:'standards')}><SlidersHorizontal size={16}/>Standards</button></nav>
+    <nav className="mobile-tools"><button aria-expanded={mobilePanel==='icons'} aria-controls="workspace-sidebar" onClick={()=>setMobilePanel(mobilePanel==='icons'?null:'icons')}><Layers2 size={16}/>Workspace</button><button onClick={()=>setMobilePanel(mobilePanel==='standards'?null:'standards')}><SlidersHorizontal size={16}/>Standards</button></nav>
     <div className={`studio-layout ${sidebarCollapsed?'sidebar-collapsed':''}`}>
       {sidebarCollapsed&&<button ref={expandSidebarRef} className="sidebar-toggle sidebar-expand-button sidebar-edge-toggle" aria-label="Expand sidebar" title="Expand sidebar" aria-expanded={false} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftOpen size={17}/></button>}
-      <aside id="workspace-sidebar" aria-label="Your icons and workspace" className={`sidebar ${mobilePanel==='icons'?'mobile-open':''}`}>
+      <aside id="workspace-sidebar" aria-label="Studio, library, and workspace" className={`sidebar ${mobilePanel==='icons'?'mobile-open':''}`}>
         <div className="sidebar-brand-row"><a className="brand" href="/" aria-label="iconoklast.app home"><Logo /><span>iconoklast<span className="brand-dot">.app</span></span></a><button ref={collapseSidebarRef} className="sidebar-toggle sidebar-collapse-button" aria-label="Collapse sidebar" title="Collapse sidebar" aria-expanded={!sidebarCollapsed} aria-controls="workspace-sidebar" onClick={toggleSidebar}><PanelLeftClose size={17}/></button><button className="sidebar-toggle sidebar-mobile-close" aria-label="Close icons sidebar" onClick={()=>setMobilePanel(null)}><X size={18}/></button></div>
         <div className="sidebar-project"><label className="sidebar-project-name"><FolderOpen size={15}/><input value={setName} maxLength={60} onChange={e=>setSetName(e.target.value)} aria-label="Icon set name"/></label><div className="sidebar-project-meta"><span><i/>Saved on this device</span><button className="icon-button small" title="How iconoklast.app works" aria-label="How iconoklast.app works" onClick={()=>setModal('help')}><CircleHelp size={16}/></button></div></div>
         <div className="nav-label">WORKSPACE</div>
         <nav className="main-nav" aria-label="Workspace views">
-          <button className={tab==='studio'?'active':''} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Design new</button>
-          <button className={tab==='refactor'?'active':''} onClick={()=>switchWorkspace('refactor')} disabled={!!busy}><Layers2 size={17}/>Redesign<span className="nav-badge">{uploaded.length}</span></button>
-          <button className={tab==='collection'?'active':''} onClick={()=>setTab('collection')}><Grid2X2 size={17}/>Accepted icons<span className="nav-badge">{accepted.length}</span></button>
+          <button className={tab!=='collection'?'active':''} aria-current={tab!=='collection'?'page':undefined} onClick={()=>switchWorkspace('studio')} disabled={!!busy}><WandSparkles size={17}/>Icon studio</button>
+          <button className={tab==='collection'?'active':''} aria-current={tab==='collection'?'page':undefined} onClick={()=>{setTab('collection');setMobilePanel(null);workspaceScrollRef.current?.scrollTo({top:0});}}><Grid2X2 size={17}/>Library<span className="nav-badge">{items.length}</span></button>
         </nav>
-        <div className="icons-heading"><span>YOUR ICONS <b>{items.length}</b></span><button className="icon-button small" aria-label="Add new icon" onClick={newIcon}><Plus size={16}/></button></div>
-        <div className="icon-list">{items.map(i=><div className={`icon-row ${i.id===activeId&&!isNew?'selected':''}`} key={i.id}><button className="icon-row-main" onClick={()=>chooseIcon(i)}><span className="mini-icon"><SvgPreview svg={i.candidates.find(c=>c.status==='accepted')?.svg||i.candidates[0]?.svg} size={19}/></span><span className="icon-row-label">{i.name}</span>{i.candidates.some(c=>c.status==='accepted')?<Check size={13} className="accepted-check"/>:<span className="status-dot"/>}</button><button className="delete-icon" aria-label={`Remove ${i.name}`} onClick={()=>removeIcon(i.id)} disabled={!!busy}><X size={12}/></button></div>)}</div>
         <button className="add-icon" onClick={newIcon} disabled={!!busy}><Plus size={16}/>Create an icon</button>
         <div className={`upload-zone ${dragOver?'drag-over':''}`} onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);void upload(e.dataTransfer.files);}}><div className="upload-glyph"><Upload size={19}/></div><strong>Already have icons?</strong><p>Drop your SVGs here.<br/>We’ll help them belong together.</p><button className="tertiary" onClick={()=>fileRef.current?.click()} disabled={!!busy}>Browse files <ArrowRight size={13}/></button></div>
         <div className="sidebar-bottom"><button className="connection-card" onClick={()=>setModal('connect')}><span className={`connection-icon ${connected?'connected':''}`}><Sparkles size={17}/></span><span><strong>AI settings</strong><small>{connected?(useAI?'AI enabled · Manage connection':'Demo mode · Manage connection'):'Connect your API token'}</small></span><ChevronRight size={14}/></button><div className="sidebar-foot"><span>DESIGNED TO BELONG.</span><span>v0.1</span></div></div>
       </aside>
 
       <main className={`main-workspace ${tab==='refactor'?'set-workspace':''}`}>
-        <div className="workspace-scroll">
-          {tab!=='refactor'&&<div className="page-heading"><div className="eyebrow"><span/> THE ICON WORKSPACE</div><h1>{tab==='collection'?'Small icons. One voice.':isNew?'Every great icon starts here.':'One idea. Many possibilities.'}</h1><p>{tab==='collection'?'Your accepted directions, ready for their next big thing.':"Explore a few directions. Find the one that feels right."}</p></div>}
+        <div className="workspace-scroll" ref={workspaceScrollRef}>
+          {tab==='studio'&&<div className="page-heading"><div className="eyebrow"><span/> THE ICON WORKSPACE</div><h1>{isNew?'Every great icon starts here.':'One idea. Many possibilities.'}</h1><p>Explore a few directions. Find the one that feels right.</p></div>}
 
           {error&&<div className="message error" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={()=>setError('')}><X size={14}/></button></div>}
           {uploadErrors.length>0&&<div className="message error" role="alert"><div><strong>Some icons need attention</strong>{uploadErrors.map((e,i)=><p key={i}>{e}</p>)}</div><button aria-label="Dismiss upload errors" onClick={()=>setUploadErrors([])}><X size={14}/></button></div>}
 
-          {tab==='collection'?<>
-            <div className="results-toolbar"><div><strong>{accepted.length} accepted icons</strong><span>SVG · Ready to export</span></div></div>
-            {accepted.length?<div className={`candidate-grid collection-grid ${darkCanvas?'dark-canvas':''}`}>{accepted.flatMap(i=>i.candidates.filter(c=>c.status==='accepted').map(c=><article className="candidate-card" key={c.id}><button className="collection-preview" aria-label={`Open ${i.name} in studio`} onClick={()=>chooseIcon(i)}><SvgPreview svg={c.svg} size={64}/></button><div className="collection-footer"><div><strong>{i.name}</strong><small>{c.name}{c.treatment&&` · ${versionLabel(c)}`}</small></div><button className="icon-button" aria-label={`Download ${i.name} ${versionLabel(c)} SVG`} onClick={()=>exportSvg(c.svg,candidateFileName(i.name,c))}><Download size={16}/></button></div></article>))}</div>:<div className="empty-state"><CheckCheck size={36}/><h2>A collection worth keeping.</h2><p>Accept your favorite direction for each icon.<br/>They’ll be gathered here, ready to export.</p><button className="button primary" onClick={()=>setTab('studio')}>Explore your icons<ArrowRight size={15}/></button></div>}
-          </>:tab==='refactor'?<>
+          {tab!=='collection'&&<div className="workspace-mode-switch" role="group" aria-label="Icon studio mode">
+            <button type="button" aria-pressed={tab==='studio'} disabled={!!busy} onClick={()=>switchWorkspace('studio')}><Sparkles size={15}/>Design new</button>
+            <button type="button" aria-pressed={tab==='refactor'} disabled={!!busy} onClick={()=>switchWorkspace('refactor')}><WandSparkles size={15}/>Redesign</button>
+          </div>}
+
+          {tab==='collection'?<IconLibrary items={items} standards={standards} busy={!!busy}
+            darkCanvas={darkCanvas} previewSize={libraryPreviewSize} onPreviewSizeChange={setLibraryPreviewSize}
+            filter={libraryFilter} onFilterChange={setLibraryFilter} query={libraryQuery} onQueryChange={setLibraryQuery}
+            onOpenItem={id=>{const item=items.find(i=>i.id===id);if(item){chooseIcon(item);requestAnimationFrame(()=>{workspaceScrollRef.current?.scrollTo({top:0});if(item.originalSvg)document.getElementById(`isb-name-${id}`)?.scrollIntoView({block:'start'});});}}}
+            onInspect={(itemId,candidate)=>{const item=items.find(i=>i.id===itemId);if(item){setActiveId(itemId);setBrief(item.brief);setIsNew(false);setInspect(candidate);}}}
+            onEdit={(itemId,candidate)=>openEditor(candidate,itemId)}
+            onStatus={(itemId,candidateId,status)=>setCandidateStatus(candidateId,status,itemId)}
+            onDownload={(itemId,candidate)=>exportSvg(candidate.svg,candidateFileName(items.find(i=>i.id===itemId)?.name||candidate.name,candidate))}
+            onRemoveItem={removeIcon}/>
+          :tab==='refactor'?<>
             {uploaded.length>0?<>
               <SetToolbar total={uploaded.length} selected={batchTargets.length} count={count} onCountChange={setCount}
                 brief={batchFeedback} onBriefChange={setBatchFeedback} connected={connected} busy={!!busy}
@@ -493,7 +527,7 @@ export default function Home() {
                 showGuides={showConstructionGuides} onShowGuidesChange={setShowConstructionGuides}
                 proportionLabel={standards.proportion==='square'?'1:1 artwork':'Natural proportions'} gridLabel={GRID_LABELS[standards.constructionGrid||'none']}/>
               {busy&&busy!=='fit'&&<GenerationProgress {...requestProgress} count={count} completed={busy==='batch'?batchProgress.done:0} total={busy==='batch'?batchProgress.total:1}/>}
-              <IconSetBoard standards={standards} showGuides={showConstructionGuides} items={uploaded} selectedIds={batchIds} activeId={activeId} busy={!!busy} states={batchStates}
+              <IconSetBoard darkCanvas={darkCanvas} standards={standards} showGuides={showConstructionGuides} items={uploaded} selectedIds={batchIds} activeId={activeId} busy={!!busy} states={batchStates}
                 onToggle={id=>setBatchIds(old=>old.includes(id)?old.filter(i=>i!==id):[...old,id])}
                 onFocus={id=>{const i=items.find(i=>i.id===id);if(i)chooseIcon(i);}}
                 onBriefChange={(id,value)=>{setItems(old=>old.map(i=>i.id===id?{...i,brief:value}:i));if(id===activeId)setBrief(value);}}
@@ -511,7 +545,7 @@ export default function Home() {
             {!isNew&&active?.originalSvg&&<section className="audit-card"><div className="source-preview"><SvgPreview svg={active.originalSvg} size={42}/><span>ORIGINAL</span></div><div className="audit-copy"><div><strong>Consistency review</strong><span className={`score ${audit&&audit.score>=85?'good':''}`}>{audit?.score??'—'} / 100</span></div><p>{audit?.issues.length?`${audit.issues.length} points to review against your standards.`:'The source matches the measurable style checks.'}</p>{audit?.issues.slice(0,4).map((i,idx)=><div className="audit-issue" key={idx}><span/ ><span><b>{i.label}</b> — {i.detail}</span></div>)}<small>Rule-based checks. Visual balance still needs your review.</small></div></section>}
 
             {!isNew&&active&&<>
-              <div className="results-toolbar"><div className="results-title"><strong>{active.name} · {directionCount(candidates)} {active.round===0?'original':candidates.some(c=>c.pairId)?'paired directions':'alternatives'}</strong><span className="round-pill">Round {active.round||'0'}</span><button className="icon-button small" title="Version history" aria-label="Version history" onClick={()=>setModal('history')}><History size={14}/></button></div><div className="canvas-controls"><div className="size-controls">{[24,48,64].map(n=><button key={n} className={size===n?'active':''} onClick={()=>setSize(n)} aria-label={`Preview at ${n} pixels`}>{n}</button>)}</div><span className="control-separator"/><button className={`icon-button small ${showGrid?'toggled':''}`} title="Toggle grid" aria-label="Toggle preview grid" aria-pressed={showGrid} onClick={()=>setShowGrid(!showGrid)}><Grid2X2 size={15}/></button><button className="icon-button small" title="Toggle canvas background" aria-label="Toggle canvas background" onClick={()=>setDarkCanvas(!darkCanvas)}>{darkCanvas?<Sun size={15}/>:<Moon size={15}/>}</button></div></div>
+              <div className="results-toolbar"><div className="results-title"><strong>{active.name} · {directionCount(candidates)} {active.round===0?'original':candidates.some(c=>c.pairId)?'paired directions':'alternatives'}</strong><span className="round-pill">Round {active.round||'0'}</span><button className="icon-button small" title="Version history" aria-label="Version history" onClick={()=>setModal('history')}><History size={14}/></button></div><div className="canvas-controls"><div className="size-controls">{[24,48,64].map(n=><button key={n} className={size===n?'active':''} onClick={()=>setSize(n)} aria-label={`Preview at ${n} pixels`}>{n}</button>)}</div><span className="control-separator"/><button className={`icon-button small ${showGrid?'toggled':''}`} title="Toggle grid" aria-label="Toggle preview grid" aria-pressed={showGrid} onClick={()=>setShowGrid(!showGrid)}><Grid2X2 size={15}/></button></div></div>
               <div className="construction-review-tools"><span>{standards.proportion==='square'?'1:1 artwork target':'Natural proportions'} · {GRID_LABELS[standards.constructionGrid||'none']}</span><label><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label></div>
               <div className={`candidate-grid ${darkCanvas?'dark-canvas':''} ${showGrid?'with-grid':''} ${busy?'generating':''}`}>
                 {candidates.map((c,idx)=><article key={c.id} className={`candidate-card ${c.status==='shortlisted'?'shortlisted':''} ${c.status==='accepted'?'is-accepted':''}`}><div className="card-topline"><span className="direction-letter">{directionLetter(c,candidates)}</span>{c.status==='accepted'?<span className="accepted-label"><Check size={11}/>Accepted</span>:c.status==='shortlisted'?<span className="shortlist-label"><Heart size={10} fill="currentColor"/>Shortlisted</span>:idx===0&&c.source==='demo'?<span className="suggested-label">START HERE</span>:<span className="card-source">{c.source==='ai'?'AI DIRECTION':c.source==='demo'?'DEMO':c.source==='edited'?'EDITED':'SVG'}</span>}</div><button className="icon-canvas" onClick={()=>setInspect(c)} aria-label={`Inspect ${c.name}`}><span className="canvas-cross x1"/><span className="canvas-cross x2"/><span className="canvas-cross x3"/><span className="canvas-cross x4"/><SvgPreview svg={c.svg} size={size} standards={standards} showGuides={showConstructionGuides}/><span className="expand-hint"><Maximize2 size={13}/></span></button><div className="candidate-caption"><strong>{c.name}</strong>{c.treatment&&<em className="treatment-badge">{versionLabel(c)}</em>}<span>{c.svg.match(/viewBox=["']([^"']+)/)?.[1].split(/[\s,]+/).slice(2).join(' × ')||'SVG'} · {c.source==='demo'?'Demo direction':c.source==='ai'?'AI generated':c.source==='edited'?'Manually edited':'Vector SVG'}</span><IconMetrics svg={c.svg} targetSquare={standards.proportion==='square'} compact/></div><div className="candidate-actions"><button disabled={!!busy} className={c.status==='shortlisted'?'selected':''} onClick={()=>setCandidateStatus(c.id,'shortlisted')} aria-pressed={c.status==='shortlisted'}><Heart size={13} fill={c.status==='shortlisted'?'currentColor':'none'}/>{c.status==='shortlisted'?'Shortlisted':'Shortlist'}</button><button disabled={!!busy} onClick={()=>openEditor(c)} aria-label={`Edit ${c.name} with pen tool`}><PenTool size={12}/>Edit</button><button disabled={!!busy} className={c.status==='accepted'?'accepted-action':''} onClick={()=>setCandidateStatus(c.id,'accepted')}><Check size={13}/>{c.status==='accepted'?'Accepted':'Accept'}</button></div></article>)}
@@ -523,7 +557,10 @@ export default function Home() {
           </>}
         </div>
         {selected.length>0&&tab!=='collection'&&!isNew&&<div className="refine-dock"><div className="shortlist-summary"><div className="shortlist-previews">{selected.map(c=><span key={c.id}><SvgPreview svg={c.svg} size={22}/></span>)}</div><div><strong>{directionCount(selected)} directions shortlisted</strong><small>{directionCount(selected)<2?'Choose one more direction to refine':'Good directions. Let’s go further.'}</small></div></div><input value={feedback} onChange={e=>setFeedback(e.target.value)} maxLength={1000} placeholder="What should change? e.g. simpler, more open…" aria-label="Refinement feedback"/><button className="button primary" disabled={directionCount(selected)<2||!!busy} onClick={()=>generate('refine')}><WandSparkles size={15}/>Refine selection<ArrowRight size={14}/></button></div>}
-        {acceptedSvgCount>0&&<div className="export-dock" role="region" aria-label="Export accepted icons"><div className="export-dock-summary"><CheckCheck size={19}/><span><strong>{acceptedSvgCount} accepted {acceptedSvgCount===1?'SVG':'SVGs'}</strong><small>Ready to take with you</small></span></div><button className="button primary" onClick={downloadSet}><ArrowDownToLine size={16}/>Export set<span className="button-count">{acceptedSvgCount}</span></button></div>}
+        <div className="export-dock workspace-utility-dock" role="region" aria-label="Preview and export controls">
+          <PreviewBackgroundToggle dark={darkCanvas} onToggle={()=>setDarkCanvas(value=>!value)}/>
+          {acceptedSvgCount>0&&<div className="workspace-export-controls"><span className="workspace-accepted-count">{acceptedSvgCount} accepted {acceptedSvgCount===1?'SVG':'SVGs'}</span><button className="button primary" onClick={downloadSet}><ArrowDownToLine size={16}/>Export set<span className="button-count">{acceptedSvgCount}</span></button></div>}
+        </div>
       </main>
 
       <aside className={`standards-panel compact-standards-panel ${mobilePanel==='standards'?'mobile-open':''}`}>
@@ -535,12 +572,12 @@ export default function Home() {
     <input ref={fileRef} type="file" accept=".svg,image/svg+xml" multiple hidden onChange={e=>void upload(e.target.files)}/>
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}<button aria-label="Dismiss notification" onClick={()=>setToast('')}><X size={13}/></button></div>}
 
-    {editing&&<VectorEditor standards={standards} svg={editing.candidate.svg} name={items.find(i=>i.id===editing.itemId)?.name||editing.candidate.name} onSave={saveVectorEdit} onClose={()=>setEditing(null)}/>}
+    {editing&&<VectorEditor darkCanvas={darkCanvas} onToggleDarkCanvas={()=>setDarkCanvas(value=>!value)} standards={standards} svg={editing.candidate.svg} name={items.find(i=>i.id===editing.itemId)?.name||editing.candidate.name} onSave={saveVectorEdit} onClose={()=>setEditing(null)}/>}
     {(modal||inspect)&&<div className="modal-overlay" onMouseDown={e=>{if(e.target===e.currentTarget){connectionController.current?.abort();setModal(null);setInspect(null);}}}><div ref={dialogRef} className={`modal ${inspect?'inspect-modal':''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close icon-button" aria-label="Close dialog" onClick={()=>{connectionController.current?.abort();setModal(null);setInspect(null);}}><X size={20}/></button>
       {modal==='connect'&&<><span className="modal-icon"><KeyRound size={25}/></span><div className="eyebrow">AI SETTINGS</div><h2 id="modal-title">Your AI connection</h2><p>Choose a model and connect your OpenAI key. You can remember it on this browser.</p>{connected&&<div className="ai-generation-setting"><label><input type="checkbox" checked={useAI} disabled={!!busy||connectionBusy||forgettingKey} onChange={e=>setUseAI(e.target.checked)}/><span>Use AI for new designs</span></label><p>Switch off for demo previews. Redesigns, refinements, and isometric designs always use AI. Your saved key stays connected.</p></div>}<label className="field-label" htmlFor="api-key">OpenAI API key</label><input id="api-key" className="text-input" type="password" autoComplete="off" value={keyDraft} disabled={connectionBusy} onChange={e=>{setKeyDraft(e.target.value);setConnectionError('');}} placeholder={connected?'An AI connection is already active':'sk-…'}/><label className="field-label" htmlFor="model-name">Model</label><div className="model-presets" role="group" aria-label="Choose an AI model">{[{id:'gpt-6-astra',name:'GPT-6 Astra',detail:'Most capable · Higher cost'},{id:'gpt-6.1-sol',name:'GPT-6.1 Sol',detail:'Balanced · Lower cost'}].map(option=><button key={option.id} type="button" disabled={connectionBusy||!!busy} aria-pressed={model===option.id} className={model===option.id?'chosen':''} onClick={()=>{setModel(option.id);setConnectionVerified(false);setConnectionError('');}}><strong>{option.name}</strong><span>{option.detail}</span></button>)}</div><input id="model-name" className="text-input" value={model} disabled={connectionBusy||!!busy} maxLength={80} onChange={e=>{setModel(e.target.value);setConnectionVerified(false);setConnectionError('');}} placeholder="Default model"/><p className="model-help">Your model choice is remembered. Verify access with your OpenAI key before generating.{model==='gpt-6-astra'&&<> Astra costs more per token than Sol. <a href="https://developers.openai.com/api/docs/models/gpt-6-astra" target="_blank" rel="noreferrer">View model details ↗</a></>}</p>{keySaved&&!keyDraft.trim()?<div className="remembered-key-status"><ShieldCheck size={17}/><span><strong>Key remembered on this browser</strong><small>Your connection survives refreshes. Use Forget key to remove it.</small></span></div>:<div className="remember-key-setting"><label><input type="checkbox" checked={rememberKey} disabled={!rememberAvailable||connectionBusy||forgettingKey} onChange={e=>setRememberKey(e.target.checked)}/><span>Remember my key</span></label><p>{rememberAvailable?'Encrypted and saved for 30 days on this browser.':'Remembering keys is unavailable on this instance.'}</p></div>}<div className="privacy-note"><ShieldCheck size={17}/><span>{rememberKey?'iconoklast.app encrypts your key in a private browser cookie that only the server can read. It is kept out of your workspace and page storage.':'Without Remember my key, your token stays in this tab’s memory and clears on refresh.'} Usage is billed to your OpenAI account.</span></div>{serverConfigured&&<div className="connection-notice"><Check size={14}/>A server connection is configured.</div>}{connectionError&&<div className="message error" role="alert">{connectionError}</div>}<button className="button primary full" disabled={connectionBusy||forgettingKey||(!keyDraft.trim()&&!connected)} onClick={connectAI}>{connectionBusy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>} {connectionBusy?'Checking key and model…':rememberKey&&!keySaved?'Verify and save key':'Verify and connect'}</button>{connected&&<button className="text-button disconnect" disabled={connectionBusy||forgettingKey} onClick={forgetAIKey}>{forgettingKey?'Forgetting key…':keySaved?'Forget key & use demo mode':'Clear token & use demo mode'}</button>}<small className="modal-small">{keySaved?'Your saved key is encrypted and expires after 30 days.':'Choose Remember my key before connecting to keep it after refresh.'} Your uploaded icons and designs stay on this device.</small></>}
       {modal==='help'&&<><span className="modal-icon"><Sparkles size={26}/></span><div className="eyebrow">Welcome to iconoklast.app</div><h2 id="modal-title">A family of icons.<br/>A process that feels natural.</h2><div className="help-steps"><div><b>01</b><span><strong>Define your visual language</strong>Pick a style, weight, canvas, corners, and palette.</span></div><div><b>02</b><span><strong>Create or bring your own</strong>Write an icon brief, or upload a set of SVG files.</span></div><div><b>03</b><span><strong>Explore. Choose. Refine.</strong>Compare 4–8 alternatives. Accept one, or shortlist 2–3 and add feedback for the next round.</span></div><div><b>04</b><span><strong>Take your icons anywhere</strong>Export accepted icons as SVG. Your workspace saves automatically in this browser.</span></div></div><button className="button primary full" onClick={()=>setModal(null)}>Let’s make something<ArrowRight size={16}/></button></>}
       {modal==='history'&&<><span className="modal-icon"><History size={26}/></span><h2 id="modal-title">Room to explore.</h2><p>Every previous round stays here. Restore a direction whenever you need it.</p><div className="history-list">{active?.revisions?.length?([...active.revisions].reverse()).map((r,idx)=><div className="history-item" key={idx}><div className="history-thumbs">{r.candidates.slice(0,3).map(c=><SvgPreview key={c.id} svg={c.svg} size={28}/>)}</div><span><strong>Round {r.round}</strong><small>{r.candidates.length} directions · {r.standards.style}</small></span><button className="button secondary" onClick={()=>restoreRevision(r)}>Restore</button></div>):<div className="empty-history">Your next generation will save this round here.</div>}</div></>}
-      {inspect&&<><div className="eyebrow">A CLOSER LOOK</div><h2 id="modal-title">{inspect.name}</h2>{inspect.treatment&&<span className="treatment-badge">{versionLabel(inspect)}</span>}<div className={`inspect-canvas ${darkCanvas?'dark-canvas':''}`}><SvgPreview svg={inspect.svg} size={200} standards={standards} showGuides={showConstructionGuides}/></div>{inspectedCanvas&&<p className="inspect-unit-caption">{inspectedCanvas.width} × {inspectedCanvas.height} grid · 1 square = 1 unit = 1 export pixel</p>}<div className="inspect-grid-actions"><label className="inspect-guide-toggle"><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label><button className="button secondary" disabled={!!busy||items.some(item=>item.originalSvg===inspect.svg)} onClick={()=>void fitExistingDesigns(standards,inspect.id)}>{busy==='fit'?<LoaderCircle size={14} className="spin"/>:<Maximize2 size={14}/>}Fit to {artworkSpan} × {artworkSpan}</button></div><p className="inspect-fit-target">{artworkFit.mode==='keyline'?'Keyline target':'Custom target'}: <strong>{artworkSpan} × {artworkSpan} u</strong> · Padding {artworkPadding} u · Stroke {standards.strokeWidth} u</p>{fitFeedback&&(!fitFeedback.candidateId||fitFeedback.candidateId===inspect.id)&&<p className={`inspect-fit-feedback${fitFeedback.error?' error':''}`} role={fitFeedback.error?'alert':'status'}>{fitFeedback.message}</p>}<IconMetrics svg={inspect.svg} targetSquare={standards.proportion==='square'}/><p>{inspect.rationale}</p><div className="inspect-sizes">{[16,24,32,48].map(n=><div key={n}><SvgPreview svg={inspect.svg} size={n}/><span>{n}px</span></div>)}</div><div className="modal-buttons"><button className="button secondary" onClick={()=>openEditor(inspect)}><PenTool size={15}/>Edit paths</button><button className="button secondary" onClick={()=>{navigator.clipboard.writeText(inspect.svg).then(()=>notice('SVG copied to your clipboard.')).catch(()=>notice('Clipboard unavailable. Download the SVG instead.'));}}><Copy size={15}/>Copy SVG</button><button className="button primary" onClick={()=>exportSvg(inspect.svg,candidateFileName(active?.name||inspect.name,inspect))}><Download size={15}/>Download SVG</button></div><details className="svg-code"><summary>View SVG source<FileCode2 size={14}/></summary><pre>{inspect.svg}</pre></details></>}
+      {inspect&&<><div className="eyebrow">A CLOSER LOOK</div><h2 id="modal-title">{inspect.name}</h2>{inspect.treatment&&<span className="treatment-badge">{versionLabel(inspect)}</span>}<div className={`inspect-canvas ${darkCanvas?'dark-canvas':''}`}><SvgPreview svg={inspect.svg} size={200} standards={standards} showGuides={showConstructionGuides}/></div>{inspectedCanvas&&<p className="inspect-unit-caption">{inspectedCanvas.width} × {inspectedCanvas.height} grid · 1 square = 1 unit = 1 export pixel</p>}<div className="inspect-grid-actions"><PreviewBackgroundToggle dark={darkCanvas} onToggle={()=>setDarkCanvas(value=>!value)}/><label className="inspect-guide-toggle"><input type="checkbox" checked={showConstructionGuides} onChange={e=>setShowConstructionGuides(e.target.checked)}/>Show construction guides</label><button className="button secondary" disabled={!!busy||items.some(item=>item.originalSvg===inspect.svg)} onClick={()=>void fitExistingDesigns(standards,inspect.id)}>{busy==='fit'?<LoaderCircle size={14} className="spin"/>:<Maximize2 size={14}/>}Fit to {artworkSpan} × {artworkSpan}</button></div><p className="inspect-fit-target">{artworkFit.mode==='keyline'?'Keyline target':'Custom target'}: <strong>{artworkSpan} × {artworkSpan} u</strong> · Padding {artworkPadding} u · Stroke {standards.strokeWidth} u</p>{fitFeedback&&(!fitFeedback.candidateId||fitFeedback.candidateId===inspect.id)&&<p className={`inspect-fit-feedback${fitFeedback.error?' error':''}`} role={fitFeedback.error?'alert':'status'}>{fitFeedback.message}</p>}<IconMetrics svg={inspect.svg} targetSquare={standards.proportion==='square'}/><p>{inspect.rationale}</p><div className={`inspect-sizes ${darkCanvas?'dark-previews':''}`}>{[16,24,32,48].map(n=><div key={n}><SvgPreview svg={inspect.svg} size={n}/><span>{n}px</span></div>)}</div><div className="modal-buttons"><button className="button secondary" onClick={()=>openEditor(inspect)}><PenTool size={15}/>Edit paths</button><button className="button secondary" onClick={()=>{navigator.clipboard.writeText(inspect.svg).then(()=>notice('SVG copied to your clipboard.')).catch(()=>notice('Clipboard unavailable. Download the SVG instead.'));}}><Copy size={15}/>Copy SVG</button><button className="button primary" onClick={()=>exportSvg(inspect.svg,candidateFileName(active?.name||inspect.name,inspect))}><Download size={15}/>Download SVG</button></div><details className="svg-code"><summary>View SVG source<FileCode2 size={14}/></summary><pre>{inspect.svg}</pre></details></>}
     </div></div>}
   </div>;
 }

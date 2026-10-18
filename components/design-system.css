@@ -405,3 +405,43 @@
   overscroll-behavior-y: contain;
 }
 .app-shell.has-sidebar-brand .sidebar-bottom { flex-shrink: 0; }
+
+/* Keep every workspace flush to its panels, with a shared content gutter. */
+.app-shell .main-workspace {
+  --workspace-gutter: 24px;
+  --set-workspace-gutter: var(--workspace-gutter);
+}
+.app-shell .main-workspace .workspace-scroll {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  align-self: stretch;
+  padding: 24px var(--workspace-gutter) 32px;
+}
+.app-shell .main-workspace.set-workspace .workspace-scroll { padding-top: 0; }
+.app-shell :is(.export-dock, .refine-dock) { padding-inline: var(--workspace-gutter); }
+@media (max-width: 600px) {
+  .app-shell .main-workspace { --workspace-gutter: 18px; }
+  .app-shell .main-workspace .workspace-scroll { padding-block: 20px 24px; }
+}
+
+/* Show focus around the brief as a whole instead of clipping a textarea ring. */
+.app-shell .brief-card:has(textarea:focus-visible) {
+  border-color: #7896ad;
+  box-shadow: 0 0 0 3px #6486ad26, var(--elevation-2);
+}
+.app-shell .brief-card textarea:focus-visible { outline: none; box-shadow: none; }
+
+/* Keep the upload symbol, explanation, and action in one centered group. */
+.app-shell .set-upload-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+  padding: 32px 24px;
+}
+.app-shell .set-upload-empty > svg { flex-shrink: 0; color: #526b83; }
+.app-shell .set-upload-empty h2 { margin: 0; }
+.app-shell .set-upload-empty p { max-width: 52ch; margin: 0; }
+.app-shell .set-upload-empty .button { margin-top: 4px; }

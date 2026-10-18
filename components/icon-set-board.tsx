@@ -17,6 +17,7 @@ export type IconSetBoardProps = {
   items: SetBoardItem[];
   standards: Standards;
   showGuides: boolean;
+  darkCanvas?: boolean;
   selectedIds: string[];
   activeId: string;
   busy: boolean;
@@ -42,10 +43,10 @@ function Preview({ svg, label, standards, showGuides }: { svg: string; label: st
   return <IconPreview svg={svg} label={label} size={64} standards={standards} showGuides={showGuides}/>;
 }
 
-export default function IconSetBoard({ standards, showGuides, items, selectedIds, activeId, busy, states, onToggle, onFocus, onBriefChange, onRedesign, onStatus, onEdit, onInspect, onHistory }: IconSetBoardProps) {
+export default function IconSetBoard({ standards, showGuides, darkCanvas = false, items, selectedIds, activeId, busy, states, onToggle, onFocus, onBriefChange, onRedesign, onStatus, onEdit, onInspect, onHistory }: IconSetBoardProps) {
   if (!items.length) return <section className="isb-empty-board" aria-label="Uploaded icon set"><FileCode2 size={25} /><h3>Your set starts here</h3><p>Upload SVGs to see each original beside its redesigned alternatives.</p></section>;
 
-  return <section className="isb-board" aria-label="Your uploaded icons and their alternatives">
+  return <section className={`isb-board ${darkCanvas?'dark-previews':''}`} aria-label="Your uploaded icons and their alternatives">
     {items.map((item, itemIndex) => {
       // A round-zero upload is the reference, never an invented alternative.
       const alternatives = item.candidates.filter((candidate) => !(item.round === 0 && item.originalSvg && candidate.svg === item.originalSvg));
